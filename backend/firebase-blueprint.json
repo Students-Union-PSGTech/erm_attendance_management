@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "TeamMember": {
+      "title": "TeamMember",
+      "description": "Represents a student team member in an organization, with role, department, year of study, and contact details.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the team member",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the team member",
+          "maxLength": 150
+        },
+        "role": {
+          "type": "string",
+          "description": "Organizational role in the team",
+          "enum": ["LEAD", "CO-LEAD", "COORDINATOR", "CORE"]
+        },
+        "team": {
+          "type": "string",
+          "description": "Assigned team department",
+          "enum": ["MEDIA", "AMBIANCE", "PR", "TECH", "ERM", "DESIGN"]
+        },
+        "rollNo": {
+          "type": "string",
+          "description": "College Roll number or registration ID",
+          "maxLength": 30
+        },
+        "department": {
+          "type": "string",
+          "description": "Academic course or programme of study",
+          "maxLength": 200
+        },
+        "year": {
+          "type": "string",
+          "description": "Academic year of study (e.g., 1st Year, 2nd Year, etc.)",
+          "maxLength": 30
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number",
+          "maxLength": 30
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["name", "role", "team"]
+    },
+    "AttendanceSession": {
+      "title": "AttendanceSession",
+      "description": "Represents a dated attendance tracking session for a team or all teams with individual member attendance status.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the attendance session",
+          "maxLength": 128
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of the attendance session in YYYY-MM-DD format",
+          "maxLength": 20
+        },
+        "sessionSlot": {
+          "type": "string",
+          "description": "Session slot after selecting date: FN (Forenoon) or AN (Afternoon)",
+          "enum": ["FN", "AN"],
+          "maxLength": 10
+        },
+        "title": {
+          "type": "string",
+          "description": "Meeting name or purpose of the attendance check",
+          "maxLength": 150
+        },
+        "team": {
+          "type": "string",
+          "description": "Target team or ALL for multi-team attendance",
+          "maxLength": 30
+        },
+        "records": {
+          "type": "object",
+          "description": "Record mapping member IDs to status (PRESENT, ABSENT, INFORMED) and notes"
+        },
+        "notes": {
+          "type": "string",
+          "description": "General notes or agenda for this session",
+          "maxLength": 500
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Account username who registered or last saved the attendance",
+          "maxLength": 50
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of session creation"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update"
+        }
+      },
+      "required": ["date", "title", "team"]
+    }
+  },
+  "firestore": {
+    "/members/{memberId}": {
+      "schema": "TeamMember",
+      "description": "Collection of all student team members persisted securely in Firestore"
+    },
+    "/attendance/{sessionId}": {
+      "schema": "AttendanceSession",
+      "description": "Collection of attendance sessions and member check-in records"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Connectivity test document
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTeamMember(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 150
+        && data.role is string && (data.role in ['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'])
+        && data.team is string && (data.team in ['MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN'])
+        && (!('id' in data) || (data.id is string && data.id.size() <= 128))
+        && (!('rollNo' in data) || (data.rollNo is string && data.rollNo.size() <= 30))
+        && (!('department' in data) || (data.department is string && data.department.size() <= 200))
+        && (!('year' in data) || (data.year is string && data.year.size() <= 30))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 30))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
+    }
+
+    function isValidAttendanceSession(data) {
+      return data.date is string && data.date.size() > 0 && data.date.size() <= 20
+        && (!('sessionSlot' in data) || (data.sessionSlot is string && (data.sessionSlot in ['FN', 'AN'])))
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 150
+        && data.team is string && (data.team in ['ALL', 'MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN'])
+        && (!('id' in data) || (data.id is string && data.id.size() <= 128))
+        && (!('records' in data) || data.records is map)
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 500))
+        && (!('createdBy' in data) || (data.createdBy is string && data.createdBy.size() <= 50))
+        && (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
+    }
+
+    // Team members collection
+    match /members/{memberId} {
+      allow read: if true;
+      allow create, update: if isValidId(memberId) && isValidTeamMember(request.resource.data);
+      allow delete: if isValidId(memberId);
+    }
+
+    // Attendance sessions collection
+    match /attendance/{sessionId} {
+      allow read: if true;
+      allow create, update: if isValidId(sessionId) && isValidAttendanceSession(request.resource.data);
+      allow delete: if isValidId(sessionId);
+    }
+  }
+}
