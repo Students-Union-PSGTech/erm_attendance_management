@@ -21,6 +21,7 @@ const memberSchema = new Schema(
     department: { type: String, trim: true },
     year: { type: String, enum: YEARS, set: setter(normalizeYear) },
     phone: { type: String, trim: true },
+    photo: { type: String, trim: true }, // Optional photo URL
   },
   { timestamps: true, versionKey: false, toJSON: toJSONOptions },
 );

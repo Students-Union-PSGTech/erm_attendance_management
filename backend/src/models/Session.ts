@@ -22,7 +22,7 @@ const sessionSchema = new Schema(
     endTime: { type: String, match: TIME_PATTERN }, // HH:mm, optional
     sessionSlot: { type: String, enum: SESSION_SLOTS, required: true },
     title: { type: String, required: true, trim: true },
-    team: { type: String, enum: SESSION_TEAMS, required: true, default: 'ALL' },
+    team: { type: String, required: true, default: 'ALL' },
     records: { type: Map, of: attendanceEntrySchema, default: {} }, // memberId -> entry
     notes: { type: String, trim: true },
     createdBy: { type: String, required: true },

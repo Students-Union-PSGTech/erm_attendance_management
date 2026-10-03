@@ -1,24 +1,32 @@
-# Frontend Architecture
+# React + TypeScript + Vite
 
-This folder contains the complete user-facing React application:
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-| Path | Description |
-| :--- | :--- |
-| `src/App.tsx` | Main application view, routing, role-based access, and tab switching |
-| `src/main.tsx` | Entrypoint mounting the React DOM tree |
-| `src/components/` | Reusable React UI components (Attendance Tracker, Member Tables, Modals, Drawers) |
-| `src/data/` | Fallback roster data and department schemas |
-| `src/utils/` | Local storage handlers and CSV export helpers |
-| `src/firebase.ts` | Real-time Firebase Firestore client integration with live listeners |
-| `src/types.ts` | TypeScript interface definitions for members, attendance, and users |
+Currently, two official plugins are available:
 
-### Running the Frontend
-Start the local Vite development server:
-```bash
-npm run dev
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the Oxlint configuration
+
+If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
 ```
 
-Build for production:
-```bash
-npm run build
-```
+See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.

@@ -23,6 +23,7 @@ export const memberCreateSchema = z.object({
   // Stored as entered
   department: optionalText,
   phone: optionalText,
+  photo: optionalText,
 });
 
 export const memberUpdateSchema = memberCreateSchema.omit({ id: true }).partial();

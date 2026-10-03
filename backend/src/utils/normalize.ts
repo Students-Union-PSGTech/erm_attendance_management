@@ -63,8 +63,11 @@ export function normalizeTime(v: string): string {
 }
 
 
-export function slotFromTime(time: string): 'FN' | 'AN' {
-  return Number(time.slice(0, 2)) < 12 ? 'FN' : 'AN';
+export function slotFromTime(time: string): 'FN' | 'AN' | 'EV' {
+  const hour = Number(time.slice(0, 2));
+  if (hour < 12) return 'FN';
+  if (hour < 16) return 'AN';
+  return 'EV';
 }
 
 

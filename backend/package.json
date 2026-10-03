@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "import:members": "tsx src/scripts/importMembers.ts",
     "reset:credentials": "tsx src/scripts/resetCredentials.ts",
-    "normalize:members": "tsx src/scripts/normalizeMembers.ts"
+    "normalize:members": "tsx src/scripts/normalizeMembers.ts",
+    "seed": "tsx src/scripts/seed.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

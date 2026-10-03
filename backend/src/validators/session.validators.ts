@@ -23,7 +23,7 @@ const baseSession = z.object({
   
   sessionSlot: z.enum(SESSION_SLOTS).optional(),
   title: z.string().trim().min(1).max(200),
-  team: z.enum(SESSION_TEAMS).default('ALL'),
+  team: z.string().default('ALL'),
   records: recordsSchema.default({}),
   notes: z.string().trim().max(1000).optional(),
 });
@@ -44,7 +44,7 @@ export const sessionUpdateSchema = baseSession.omit({ id: true }).partial().supe
 export const sessionQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  team: z.enum(SESSION_TEAMS).optional(),
+  team: z.string().optional(),
 });
 
 export type SessionCreateInput = z.infer<typeof sessionCreateSchema>;

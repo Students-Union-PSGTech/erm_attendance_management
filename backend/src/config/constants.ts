@@ -14,7 +14,7 @@ export type Year = (typeof YEARS)[number];
 export const ATTENDANCE_STATUSES = ['PRESENT', 'ABSENT', 'INFORMED'] as const;
 export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
 
-export const SESSION_SLOTS = ['FN', 'AN'] as const;
+export const SESSION_SLOTS = ['FN', 'AN', 'EV'] as const;
 export type SessionSlot = (typeof SESSION_SLOTS)[number];
 
 export const USER_ROLES = ['admin', 'team'] as const;
