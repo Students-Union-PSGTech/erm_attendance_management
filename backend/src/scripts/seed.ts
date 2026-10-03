@@ -1,10 +1,237 @@
 import { connectDb, disconnectDb } from '../config/db';
 import { Member } from '../models/Member';
 import { newId } from '../utils/ids';
-import { TEAMS, ROLES, YEARS } from '../config/constants';
 
-const sampleFirstNames = ['Aarav', 'Diya', 'Vihaan', 'Ananya', 'Aditya', 'Kavya', 'Rudra', 'Saanvi', 'Arjun', 'Isha', 'Rohan', 'Zara', 'Kabir', 'Myra', 'Dhruv'];
-const sampleLastNames = ['Patel', 'Sharma', 'Singh', 'Gupta', 'Kumar', 'Reddy', 'Verma', 'Nair', 'Menon', 'Desai', 'Joshi', 'Chawla', 'Mehta', 'Rao', 'Iyer'];
+const rawData = `NAME	ROLE	TEAM
+SHRIHARI	LEAD	MEDIA
+THARUNSURYAA N K	LEAD	MEDIA
+GOWTHAMAN G T C	LEAD	MEDIA
+PONNISHREE	LEAD	MEDIA
+SARASWATHI	LEAD	MEDIA
+MOHANRAJ V	LEAD	MEDIA
+PRANAV S K M	LEAD	MEDIA
+LOHETH K	CO-LEAD	MEDIA
+JEEVIKA 	CO-LEAD	MEDIA
+AATHITHIYA M	CO-LEAD	MEDIA
+SHRI SANJAY I S	CO-LEAD	MEDIA
+CHIDAMBARAM	CO-LEAD	MEDIA
+VELAN 	CO-LEAD	MEDIA
+AARASUKUMARAN K	COORDINATOR	MEDIA
+BHARATH RAGAV S	COORDINATOR	MEDIA
+NITHILAN B	COORDINATOR	MEDIA
+LEKSHIKA R	COORDINATOR	MEDIA
+SANJANA D	COORDINATOR	MEDIA
+SAHANA S	COORDINATOR	MEDIA
+RITHIKA C	COORDINATOR	MEDIA
+AKHILESHWAR S	COORDINATOR	MEDIA
+ROSHAN T	COORDINATOR	MEDIA
+RAHUL	COORDINATOR	MEDIA
+HARSHAVARTHAN	COORDINATOR	MEDIA
+RIDDHI R	CORE	MEDIA
+JANA V K	CORE	MEDIA
+SANJAY	CORE	MEDIA
+AKHIEL M S 	CORE	MEDIA
+AISHWARYA S	CORE	MEDIA
+HEMAVARSHINI E	CORE	MEDIA
+SAPARNA S	CORE	MEDIA
+VISHWARITHICK C	CORE	MEDIA
+MADHAN C	CORE	MEDIA
+SHAKTHI ADARSHA R V	CORE	MEDIA
+ANBU H	CORE	MEDIA
+SIVASAKTHI N	CORE	MEDIA
+JANAVARSHINI S	CORE	MEDIA
+LAVANYA P	CORE	MEDIA
+CHINNATHAMBI	CORE	MEDIA
+VIJAYSHRIRAM S K	CORE	MEDIA
+VINCY JUDIA	CORE	MEDIA
+NITHIN R	CORE	MEDIA
+Amirtha Varshini J	LEAD	AMBIANCE
+Sri Sakthi  S	LEAD	AMBIANCE
+Kanishka A C	LEAD	AMBIANCE
+Lakshmipriya 	LEAD	AMBIANCE
+Soundharya 	LEAD	AMBIANCE
+Inbathamizhan B 	LEAD	AMBIANCE
+Arun Kumar 	LEAD	AMBIANCE
+Roshini T	LEAD	AMBIANCE
+Rohit V	CO-LEAD	AMBIANCE
+Rashmitha P R E	COORDINATOR	AMBIANCE
+Devi Aishwarya 	COORDINATOR	AMBIANCE
+Pravesha R	COORDINATOR	AMBIANCE
+Vinushree M 	COORDINATOR	AMBIANCE
+Santhiya R 	COORDINATOR	AMBIANCE
+Pavithra B 	COORDINATOR	AMBIANCE
+Kamalinika T	COORDINATOR	AMBIANCE
+Harne P B	COORDINATOR	AMBIANCE
+K Kavyashree 	CORE	AMBIANCE
+Kaarthika R	CORE	AMBIANCE
+Preethika V	CORE	AMBIANCE
+Thejanyaa P	CORE	AMBIANCE
+Nivedhini M	CORE	AMBIANCE
+Keerthana T	CORE	AMBIANCE
+Asmitha Eswari R	CORE	AMBIANCE
+S. Rachana 	CORE	AMBIANCE
+Srinidhi P S	CORE	AMBIANCE
+Shankari D	CORE	AMBIANCE
+Afreena S	CORE	AMBIANCE
+Aparna R	CORE	AMBIANCE
+Shruthika S	CORE	AMBIANCE
+Kavinaya V	CORE	AMBIANCE
+Archana K T	CORE	AMBIANCE
+Surya M	CORE	AMBIANCE
+Rithanya S	CORE	AMBIANCE
+Jai Bharathan T	CORE	AMBIANCE
+Hemavarshini E	CORE	AMBIANCE
+SANJAY J	LEAD	PR
+SAI KARTHI BALAJI G 	LEAD	PR
+NAREN VAITHIYAA G	LEAD	PR
+ROHITH DHARSHAN M	CO-LEAD	PR
+M A RAJKUMAR 	CO-LEAD	PR
+PONGANESAN M	CO-LEAD	PR
+S AVANTHIKA	COORDINATOR	PR
+SRIVARDHNY DS	COORDINATOR	PR
+DARSHAN NIPUN S	COORDINATOR	PR
+DARSINE S	COORDINATOR	PR
+ARRVINDH PERIYAR KAVYA	COORDINATOR	PR
+MOUNICA SRI S 	COORDINATOR	PR
+CHAITHANYA KALI SEKAR	COORDINATOR	PR
+PRAGATHI	COORDINATOR	PR
+JOEL ABRAHAM A	COORDINATOR	PR
+VARSHA JK	COORDINATOR	PR
+GOVARTHNI G	COORDINATOR	PR
+NAKAJOTHI V P	COORDINATOR	PR
+JAYA KARTHIGA T	COORDINATOR	PR
+JHANVI	COORDINATOR	PR
+T HARISH	COORDINATOR	PR
+RAGHUVANTH S N 	COORDINATOR	PR
+SAMANVITHA KAMESH	CORE	PR
+ASHWATH K	CORE	PR
+K KANISHKA 	CORE	PR
+SHRIPATHY S 	CORE	PR
+ADITHYA MOHAN 	CORE	PR
+LAKSHANA K	CORE	PR
+SAIKUMARAN M	CORE	PR
+AYESHA HANIYA S 	CORE	PR
+TARUN PRAKASH K	CORE	PR
+Vignesh Raja A	CORE	PR
+LEKHAA P N	CORE	PR
+DHANYASHREE G I	CORE	PR
+VASUNDHARA N	CORE	PR
+THURIKA G	CORE	PR
+ SIVAKARNI R	CORE	PR
+SWETHAASHREE ARUMUGAM	CORE	PR
+DHARSANA P	CORE	PR
+SHRIVARSHAA AP 	CORE	PR
+S S NIKSHITHA	CORE	PR
+LOKESH SR 	CORE	PR
+PRATHEEP N	CORE	PR
+KANISHKA THANGARASU 	CORE	PR
+MADHUMITHA K	CORE	PR
+THAARUN A P	CORE	PR
+SRI DEAKSHA V	CORE	PR
+JAYASHREE S S	CORE	PR
+THARANIRAJA K 	CORE	PR
+HAMSAVARSHINI J	CORE	PR
+N DIVYA KANMANI 	CORE	PR
+DARSHAN V G	LEAD	TECH
+DHAARUN ABHIMANYU S	LEAD	TECH
+SURYA PRAKASH B	LEAD	TECH
+DEEBIKA N	LEAD	TECH
+MOUNIKA S S	LEAD	TECH
+CHANDRU T V	LEAD	TECH
+PRAVITH N	LEAD	TECH
+ADHISH KRISHNA S	LEAD	TECH
+KARTHICK J S	LEAD	TECH
+VISHAL N	COORDINATOR	TECH
+GOWTHAM P	COORDINATOR	TECH
+SATHYA VAISHNAVI S R	COORDINATOR	TECH
+SRIVARSHINI G	CORE	TECH
+T SUNILKUMAR	CORE	TECH
+VEDAVYAAS M R	CORE	TECH
+DHARANEESH S L	CORE	TECH
+SUJITH E	CORE	TECH
+MITRA R	CORE	TECH
+JAI SURYA SURESH KUMAR	CORE	TECH
+GURUSRIDHARA J	CORE	TECH
+SURIYA N	CORE	TECH
+JEEVAN MISHAEL P	CORE	TECH
+DIWAHAR N	CORE	TECH
+PRIYADHARSHINI U 	CORE	TECH
+SANJANA R 	CORE	TECH
+Ravi Pravin	LEAD	ERM
+Naveena	LEAD	ERM
+Deekshita	LEAD	ERM
+Kousigan	LEAD	ERM
+Ramakrishnan	LEAD	ERM
+Sukanth	LEAD	ERM
+Jagan	LEAD	ERM
+Abinandhana	LEAD	ERM
+Shreayaa	LEAD	ERM
+Barani	CO-LEAD	ERM
+Vishal	CO-LEAD	ERM
+Sathya M	CO-LEAD	ERM
+Rishwanth T	COORDINATOR	ERM
+Kannan D	COORDINATOR	ERM
+Jayantan B	COORDINATOR	ERM
+Ganesh Sakthi S	COORDINATOR	ERM
+Ananya E	COORDINATOR	ERM
+R. Nethra	COORDINATOR	ERM
+Aarnav N	COORDINATOR	ERM
+Shakthi Abinaya V	COORDINATOR	ERM
+Sharmisthaa K	COORDINATOR	ERM
+Rithika A V	COORDINATOR	ERM
+Abhinav A	COORDINATOR	ERM
+Santhosh A S	COORDINATOR	ERM
+Prithikka B	COORDINATOR	ERM
+K K Shivani Prithika	COORDINATOR	ERM
+Thellothama UB	COORDINATOR	ERM
+Sanjay S	COORDINATOR	ERM
+Asif Hussein	COORDINATOR	ERM
+Nimalan E	COORDINATOR	ERM
+Annie Rachel	CORE	ERM
+Arul Kavin V	CORE	ERM
+Ashwin G	CORE	ERM
+Asmitha	CORE	ERM
+Dharsana P	CORE	ERM
+Harini A C	CORE	ERM
+Jessicca Juliet B	CORE	ERM
+Kavyadharshini R	CORE	ERM
+Madhumitha R	CORE	ERM
+Manoj T	CORE	ERM
+Maryam J	CORE	ERM
+Naga Keerthana SR	CORE	ERM
+Nandikaa D	CORE	ERM
+Negha Sree SM	CORE	ERM
+Nethraa S	CORE	ERM
+Pranav J	CORE	ERM
+Sanjana R	CORE	ERM
+Selvakumaar R	CORE	ERM
+Shriya LT	CORE	ERM
+Sivani Shree B S	CORE	ERM
+Shahrin Jahana	CORE	ERM
+Thanushree	CORE	ERM
+Visalatche R C	CORE	ERM
+Adhvika Parthasarathy	LEAD	DESIGN
+Gokul C	LEAD	DESIGN
+Harish N	LEAD	DESIGN
+Hemessh Ram S R	LEAD	DESIGN
+Felishia Enchiletta Justin Robert	CO-LEAD	DESIGN
+Dinesh Kumar	CO-LEAD	DESIGN
+Yazhini N	COORDINATOR	DESIGN
+Meshyashri S	COORDINATOR	DESIGN
+Akshatha P R	COORDINATOR	DESIGN
+Kowsick G S	COORDINATOR	DESIGN
+Kowshika S	COORDINATOR	DESIGN
+Aarthi	CORE	DESIGN
+Varshidaa	CORE	DESIGN
+Shriya	CORE	DESIGN
+Shiyam	CORE	DESIGN
+Lakshanth	CORE	DESIGN
+Darun	CORE	DESIGN
+Divyadharshini	CORE	DESIGN
+Darshan	CORE	DESIGN
+Preetham	CORE	DESIGN
+Aarudhraa	CORE	DESIGN
+Dharshan	CORE	DESIGN`;
 
 async function seed() {
   await connectDb();
@@ -12,36 +239,24 @@ async function seed() {
     console.log('Clearing existing members...');
     await Member.deleteMany({});
     
-    console.log('Seeding dummy members...');
-    const membersToInsert = [];
-    
-    // Generate 150 diverse dummy members
-    for (let i = 1; i <= 150; i++) {
-      const firstName = sampleFirstNames[Math.floor(Math.random() * sampleFirstNames.length)];
-      const lastName = sampleLastNames[Math.floor(Math.random() * sampleLastNames.length)];
-      
-      const team = TEAMS[Math.floor(Math.random() * TEAMS.length)];
-      
-      // Weight roles so 'CORE' is more common than 'LEAD'
-      const roleRand = Math.random();
-      let role = 'CORE';
-      if (roleRand > 0.95) role = 'LEAD';
-      else if (roleRand > 0.85) role = 'CO-LEAD';
-      else if (roleRand > 0.6) role = 'COORDINATOR';
-
-      const year = YEARS[Math.floor(Math.random() * YEARS.length)];
-      
-      membersToInsert.push({
-        _id: newId(),
-        name: `${firstName} ${lastName}`,
-        team,
-        role,
-        year,
-        rollNo: `23${team.substring(0, 2).toUpperCase()}${i.toString().padStart(3, '0')}`,
-        department: 'B.Tech',
-        phone: '9' + Math.floor(Math.random() * 1000000000).toString().padStart(9, '0')
+    console.log('Seeding new members from given data...');
+    const membersToInsert = rawData.split('\n')
+      .slice(1) // skip the header
+      .filter(line => line.trim())
+      .map(line => {
+        const [name, role, team] = line.split('\t').map(s => s.trim());
+        return {
+          _id: newId(),
+          name,
+          role,
+          team,
+          rollNo: null,
+          department: null,
+          year: null,
+          phone: null,
+          photo: null
+        };
       });
-    }
     
     await Member.insertMany(membersToInsert);
     console.log(`Successfully seeded ${membersToInsert.length} members to the local database!`);
