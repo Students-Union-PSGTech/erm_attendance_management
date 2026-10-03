@@ -12,7 +12,6 @@ attendance statistics and reports.
 -   [Overview](#overview)
 -   [Features](#features)
 -   [Tech Stack](#tech-stack)
--   [Architecture](#architecture)
 -   [Project Structure](#project-structure)
 -   [Data Models](#data-models)
 -   [Getting Started](#getting-started)
@@ -94,22 +93,6 @@ stores data in MongoDB.
 
   CSV processing                      csv-parse and project CSV utilities
   -----------------------------------------------------------------------
-
-## Architecture
-
-``` mermaid
-flowchart TD
-    A[React + TypeScript UI] -->|HTTP / JSON| B[Vite development server]
-    B -->|/api proxy| C[Express REST API]
-    C --> D[Authentication and authorization]
-    C --> E[Zod request validation]
-    D --> F[Controllers and services]
-    E --> F
-    F --> G[Mongoose models]
-    G --> H[(MongoDB)]
-    F --> I[JSON responses]
-    I --> A
-```
 
 Typical request flow:
 
