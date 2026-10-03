@@ -83,6 +83,8 @@ can create them offline and send them with the record.
 | `department` | string | no | Stored as entered (trimmed) |
 | `year` | string | no | `1st Year` … `5th Year` |
 | `phone` | string | no | Stored as entered (trimmed) |
+
+Optional fields may be absent or `null`.
 | `createdAt` | date | auto | |
 | `updatedAt` | date | auto | |
 
@@ -149,8 +151,13 @@ Authorization: Bearer <token>
 
 - There are no refresh tokens. Changing or resetting credentials invalidates existing tokens.
 - **admin**: full access. Read endpoints accept `?team=` to narrow to one team.
-- **team**: read-only and always limited to their own team (`?team=` is ignored). They see their
-  team's sessions plus `ALL` sessions, with `records` filtered to their own members.
+- **team**: always limited to their own team (`?team=` is ignored). They see their team's sessions
+  plus `ALL` sessions, with `records` filtered to their own members.
+  - Members: read-only. Credentials: can change only their own login (`PATCH /auth/me/credentials`).
+  - Sessions: can create, edit and delete their **own team's** sessions (a new session is always
+    created for their team). `ALL` sessions and other teams' sessions are admin-only.
+  - Attendance: can mark and clear **their own members**, in their team's sessions and in `ALL` sessions.
+  - Anything else → 403, e.g. `You can only mark members of TECH`.
 
 ### Allowed values
 
@@ -186,7 +193,7 @@ Validation errors (400) list each problem:
 |---|---|
 | 400 | Validation failed / bad input |
 | 401 | `Missing bearer token`, `Invalid or expired token`, `Session no longer valid` |
-| 403 | `Admin access required` |
+| 403 | `Admin access required`, or a team login acting outside its team (e.g. `You can only mark members of TECH`) |
 | 404 | Not found, or outside the caller's team |
 | 409 | Duplicate id or username |
 | 500 | `Internal server error` |
@@ -198,6 +205,7 @@ Validation errors (400) list each problem:
 | GET | `/health` | public | DB connectivity |
 | POST | `/auth/login` | public | Log in |
 | GET | `/auth/me` | any | Current user |
+| PATCH | `/auth/me/credentials` | any | Change own username / password |
 | GET | `/credentials` | admin | List logins |
 | PATCH | `/credentials/:id` | admin | Change username / password |
 | POST | `/credentials/reset` | admin | Reset all logins to defaults |
@@ -211,11 +219,11 @@ Validation errors (400) list each problem:
 | DELETE | `/members/:id` | admin | Delete member |
 | GET | `/sessions` | any | List sessions |
 | GET | `/sessions/:id` | any | One session |
-| POST | `/sessions` | admin | Create session |
-| PATCH | `/sessions/:id` | admin | Edit session |
-| DELETE | `/sessions/:id` | admin | Delete session |
-| PUT | `/sessions/:id/records/:memberId` | admin | Mark one member |
-| DELETE | `/sessions/:id/records/:memberId` | admin | Clear one mark |
+| POST | `/sessions` | admin, own team | Create session |
+| PATCH | `/sessions/:id` | admin, own team | Edit session |
+| DELETE | `/sessions/:id` | admin, own team | Delete session |
+| PUT | `/sessions/:id/records/:memberId` | admin, own members | Mark one member |
+| DELETE | `/sessions/:id/records/:memberId` | admin, own members | Clear one mark |
 | GET | `/stats/summary` | any | Totals by role / team |
 | GET | `/stats/attendance` | any | Per-member counts and % |
 | GET | `/stats/daily` | any | Per-day totals |
@@ -263,6 +271,23 @@ Team logins also include `"team": "TECH"`. Wrong credentials → 401 `Invalid us
 ```json
 { "user": { "id": "66fe1c2a9b1e4a0012345679", "username": "tech", "role": "team", "team": "TECH" } }
 ```
+
+#### `PATCH /auth/me/credentials`
+
+Any logged-in user (admin or team) changes their own login. The current password is required.
+
+Request (`username` and/or `newPassword`):
+```json
+{ "currentPassword": "tech@erm", "username": "techlead", "newPassword": "S3cret!!" }
+```
+- `username`: 3–40 characters from `a-z 0-9 . _ -` (stored lowercase)
+- `newPassword`: 6–128 characters
+
+Response 200 — a fresh token, because every older token for this login stops working:
+```json
+{ "token": "eyJhbGciOi...", "user": { "id": "66fe…679", "username": "techlead", "role": "team", "team": "TECH" } }
+```
+Errors: 400 `Current password is incorrect` (path `currentPassword`), 400 nothing to change, 409 `Username already taken`.
 
 ### Credentials (admin)
 
@@ -315,7 +340,8 @@ No body. Every token stops working, including the caller's.
   "updatedAt": "2026-10-03T07:27:57.637Z"
 }
 ```
-`rollNo`, `department`, `year` and `phone` are left out when empty.
+`rollNo`, `department`, `year` and `phone` are optional: missing or `null` when not filled in
+(members seeded from a NAME/ROLE/TEAM sheet have them as `null`).
 
 #### `GET /members?team=&role=&search=`
 
@@ -478,7 +504,9 @@ Sessions are returned newest first (by date, then start time).
 ```
 404 `Session not found`.
 
-#### `POST /sessions` — admin
+#### `POST /sessions` — admin, team login (own team)
+
+A team login always creates the session for its own team: `team` may be left out or sent as its own team; any other team → 403.
 
 Request:
 ```json
@@ -510,7 +538,9 @@ Errors:
 - 400 `Unknown member ids in records`, with `details: { "unknown": ["…"] }`
 - 409 `Session id already exists`
 
-#### `PATCH /sessions/:id` — admin
+#### `PATCH /sessions/:id` — admin, team login (own team's sessions)
+
+Team logins can't edit `ALL` or other teams' sessions, can't move a session to another team, and `records` may only contain their own members.
 
 Send any subset of the fields:
 ```json
@@ -523,23 +553,24 @@ Send any subset of the fields:
 
 Response 200: `{ "session": "<Session>" }`. 404 `Session not found`.
 
-#### `DELETE /sessions/:id` — admin
+#### `DELETE /sessions/:id` — admin, team login (own team's sessions)
 
-Response 204. 404 `Session not found`.
+Response 204. 404 `Session not found`. 403 for a team login on an `ALL` or other team's session.
 
-#### `PUT /sessions/:id/records/:memberId` — admin
+#### `PUT /sessions/:id/records/:memberId` — admin, team login (own members)
 
-Marks one member.
+Marks one member. A team login can mark its own members in its own team's sessions and in `ALL` sessions.
 ```json
 { "status": "ABSENT", "notes": "no reason given" }
 ```
-Response 200: `{ "session": "<Session>" }`, the full updated session.
+Response 200: `{ "session": "<Session>" }`, the full updated session. For team logins, `records` in
+every session response contains only their own members.
 
-Errors: 400 for an unknown member id, 404 `Session not found`.
+Errors: 400 for an unknown member id, 403 for a team login marking another team's member or in another team's session, 404 `Session not found`.
 
-#### `DELETE /sessions/:id/records/:memberId` — admin
+#### `DELETE /sessions/:id/records/:memberId` — admin, team login (own members)
 
-Clears one member's mark. Response 200: `{ "session": "<Session>" }`.
+Clears one member's mark. Same rules as marking. Response 200: `{ "session": "<Session>" }`.
 
 ### Stats
 
