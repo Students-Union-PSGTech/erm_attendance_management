@@ -11,7 +11,7 @@ import {
   writeBatch,
   onSnapshot,
 } from 'firebase/firestore';
-import firebaseConfig from '../../credentials/firebase-applet-config.json';
+import firebaseConfig from '../credentials/firebase-applet-config.json';
 import { TeamMember, AttendanceSession } from './types';
 
 // Initialize Firebase App

@@ -41,8 +41,7 @@ export const TEAM_COLORS: Record<TeamType, { bg: string; text: string; border: s
   },
 };
 
-// Re-exported from isolated credentials folder for security & modularity
-export { CREDENTIALS } from '../../../credentials/auth-credentials';
+
 
 export const INITIAL_MEMBERS: TeamMember[] = [
   {
