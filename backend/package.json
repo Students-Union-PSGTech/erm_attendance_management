@@ -1,0 +1,34 @@
+{
+  "name": "erm-attendance-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MongoDB + Express + TypeScript backend for the ERM Attendance Tracker",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "import:members": "tsx src/scripts/importMembers.ts",
+    "reset:credentials": "tsx src/scripts/resetCredentials.ts",
+    "normalize:members": "tsx src/scripts/normalizeMembers.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.13.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}
