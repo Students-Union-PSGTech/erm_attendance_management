@@ -21,6 +21,12 @@ import {
   Edit3,
   Award,
   Filter,
+  Plus,
+  Trash2,
+  Check,
+  FileText,
+  RotateCcw,
+  KeyRound,
 } from 'lucide-react';
 
 interface TeamDashboardProps {
@@ -176,6 +182,42 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   // CSV Export loading
   const [exportingCsv, setExportingCsv] = useState(false);
+
+  // Meeting create / edit modal (team logins manage their own team's meetings)
+  const emptyMeetingForm = () => ({
+    title: '',
+    date: new Date().toISOString().slice(0, 10),
+    startTime: '09:00',
+    endTime: '',
+    notes: '',
+  });
+  const [meetingModalOpen, setMeetingModalOpen] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<AttendanceSession | null>(null);
+  const [meetingForm, setMeetingForm] = useState(emptyMeetingForm);
+  const [meetingSaving, setMeetingSaving] = useState(false);
+  const [meetingError, setMeetingError] = useState<string | null>(null);
+
+  // Delete confirmation
+  const [deletingMeeting, setDeletingMeeting] = useState<AttendanceSession | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // Attendance marking
+  const [markingIds, setMarkingIds] = useState<Set<string>>(new Set());
+  const [bulkMarking, setBulkMarking] = useState(false);
+
+  // Change own login (username / password)
+  const [loginName, setLoginName] = useState(user.username);
+  const [credModalOpen, setCredModalOpen] = useState(false);
+  const [credForm, setCredForm] = useState({ currentPassword: '', username: '', newPassword: '', confirmPassword: '' });
+  const [credSaving, setCredSaving] = useState(false);
+  const [credError, setCredError] = useState<string | null>(null);
+
+  // Short-lived message for actions (marking, deleting...)
+  const [actionMessage, setActionMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const flash = (type: 'error' | 'success', text: string) => {
+    setActionMessage({ type, text });
+    window.setTimeout(() => setActionMessage((m) => (m?.text === text ? null : m)), 4000);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -468,6 +510,234 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     }
   };
 
+  // ─────────────────────────── Meetings & attendance actions ───────────────────────────
+
+  /** Team logins can edit/delete only their own team's meetings (not ALL sessions). */
+  const canManage = (s: AttendanceSession) => s.team === teamName;
+
+  /** Parse a JSON body safely and turn error responses into a readable message. */
+  const readJson = async (res: Response) => {
+    const text = await res.text();
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch {
+      return {};
+    }
+  };
+  const errorText = (data: any, status: number) => {
+    if (Array.isArray(data?.details) && data.details.length) {
+      return data.details.map((d: any) => (d.path ? `${d.path}: ${d.message}` : d.message)).join('; ');
+    }
+    return data?.error || `Request failed (${status})`;
+  };
+
+  const sortSessions = (list: AttendanceSession[]) =>
+    [...list].sort((a, b) =>
+      a.date === b.date ? (b.startTime || '').localeCompare(a.startTime || '') : b.date.localeCompare(a.date),
+    );
+
+  const openCreateMeeting = () => {
+    setEditingMeeting(null);
+    setMeetingForm(emptyMeetingForm());
+    setMeetingError(null);
+    setMeetingModalOpen(true);
+  };
+
+  const openEditMeeting = (s: AttendanceSession) => {
+    setEditingMeeting(s);
+    setMeetingForm({
+      title: s.title,
+      date: s.date,
+      startTime: s.startTime || '09:00',
+      endTime: s.endTime || '',
+      notes: s.notes || '',
+    });
+    setMeetingError(null);
+    setMeetingModalOpen(true);
+  };
+
+  const handleSaveMeeting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (meetingForm.endTime && meetingForm.endTime <= meetingForm.startTime) {
+      setMeetingError('End time must be after start time');
+      return;
+    }
+    setMeetingSaving(true);
+    setMeetingError(null);
+
+    // Slot is worked out by the backend from the start time (before 12:00 = FN)
+    const body: Record<string, unknown> = {
+      title: meetingForm.title.trim(),
+      date: meetingForm.date,
+      startTime: meetingForm.startTime,
+      notes: meetingForm.notes.trim(),
+    };
+    if (editingMeeting) {
+      body.endTime = meetingForm.endTime || null; // null clears it
+    } else {
+      body.team = teamName;
+      if (meetingForm.endTime) body.endTime = meetingForm.endTime;
+    }
+
+    try {
+      const res = await fetch(editingMeeting ? `/api/sessions/${editingMeeting.id}` : '/api/sessions', {
+        method: editingMeeting ? 'PATCH' : 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(body),
+      });
+      const data = await readJson(res);
+      if (!res.ok) {
+        setMeetingError(errorText(data, res.status));
+        return;
+      }
+      const saved: AttendanceSession = data.session;
+      setSessions((prev) =>
+        sortSessions(editingMeeting ? prev.map((s) => (s.id === saved.id ? saved : s)) : [saved, ...prev]),
+      );
+      if (!editingMeeting) setSelectedSessionId(saved.id);
+      setMeetingModalOpen(false);
+      flash('success', editingMeeting ? 'Meeting updated' : 'Meeting created');
+    } catch (err: any) {
+      setMeetingError(err.message || 'Network error');
+    } finally {
+      setMeetingSaving(false);
+    }
+  };
+
+  const handleDeleteMeeting = async () => {
+    if (!deletingMeeting) return;
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(`/api/sessions/${deletingMeeting.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        flash('error', errorText(await readJson(res), res.status));
+        return;
+      }
+      setSessions((prev) => prev.filter((s) => s.id !== deletingMeeting.id));
+      if (selectedSessionId === deletingMeeting.id) setSelectedSessionId('');
+      flash('success', 'Meeting deleted');
+      setDeletingMeeting(null);
+    } catch (err: any) {
+      flash('error', err.message || 'Network error');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  /** Replace one member's record in a session locally (undefined = clear). */
+  const setLocalRecord = (sessionId: string, memberId: string, rec: SessionRecord | undefined) => {
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== sessionId) return s;
+        const records = { ...(s.records || {}) };
+        if (rec) records[memberId] = rec;
+        else delete records[memberId];
+        return { ...s, records };
+      }),
+    );
+  };
+
+  /** Mark (or clear, with status null) one member. Optimistic, rolls back on failure. */
+  const markMember = async (
+    session: AttendanceSession,
+    memberId: string,
+    status: SessionRecord['status'] | null,
+  ): Promise<boolean> => {
+    const previous = session.records?.[memberId];
+    setLocalRecord(
+      session.id,
+      memberId,
+      status ? { status, markedAt: new Date().toISOString() } : undefined,
+    );
+    setMarkingIds((prev) => new Set(prev).add(memberId));
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/records/${memberId}`, {
+        method: status ? 'PUT' : 'DELETE',
+        headers: getAuthHeaders(),
+        ...(status && { body: JSON.stringify({ status }) }),
+      });
+      if (!res.ok) throw new Error(errorText(await readJson(res), res.status));
+      const data = await readJson(res);
+      // Keep the server's markedAt for this member
+      const serverRec = data.session?.records?.[memberId];
+      if (status && serverRec) setLocalRecord(session.id, memberId, serverRec);
+      return true;
+    } catch (err: any) {
+      setLocalRecord(session.id, memberId, previous);
+      flash('error', err.message || 'Could not save attendance');
+      return false;
+    } finally {
+      setMarkingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(memberId);
+        return next;
+      });
+    }
+  };
+
+  /** Mark every team member who isn't marked yet. */
+  const markAllUnmarked = async (status: SessionRecord['status']) => {
+    if (!activeSession) return;
+    const targets = members.filter((m) => !activeSession.records?.[m.id]);
+    if (targets.length === 0) return;
+    setBulkMarking(true);
+    const results = await Promise.all(targets.map((m) => markMember(activeSession, m.id, status)));
+    setBulkMarking(false);
+    const ok = results.filter(Boolean).length;
+    if (ok) flash('success', `Marked ${ok} member${ok === 1 ? '' : 's'} ${status.toLowerCase()}`);
+  };
+
+  const openCredModal = () => {
+    setCredForm({ currentPassword: '', username: loginName, newPassword: '', confirmPassword: '' });
+    setCredError(null);
+    setCredModalOpen(true);
+  };
+
+  const handleSaveCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const username = credForm.username.trim().toLowerCase();
+    const usernameChanged = username !== loginName;
+    if (!usernameChanged && !credForm.newPassword) {
+      setCredError('Enter a new username or a new password');
+      return;
+    }
+    if (credForm.newPassword && credForm.newPassword !== credForm.confirmPassword) {
+      setCredError('New passwords do not match');
+      return;
+    }
+
+    setCredSaving(true);
+    setCredError(null);
+    try {
+      const res = await fetch('/api/auth/me/credentials', {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          currentPassword: credForm.currentPassword,
+          ...(usernameChanged && { username }),
+          ...(credForm.newPassword && { newPassword: credForm.newPassword }),
+        }),
+      });
+      const data = await readJson(res);
+      if (!res.ok) {
+        setCredError(errorText(data, res.status));
+        return;
+      }
+      // Old token no longer works; keep this session alive with the new one
+      localStorage.setItem('token', data.token);
+      setLoginName(data.user?.username ?? username);
+      setCredModalOpen(false);
+      flash('success', 'Login updated. Use the new details next time you sign in.');
+    } catch (err: any) {
+      setCredError(err.message || 'Network error');
+    } finally {
+      setCredSaving(false);
+    }
+  };
+
   // Overall attendance rate across team
   const overallTeamAttendancePct = useMemo(() => {
     if (!attendanceStats.length) return 0;
@@ -475,6 +745,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     const totalPresent = attendanceStats.reduce((sum, s) => sum + s.present, 0);
     return totalMarked > 0 ? Math.round((totalPresent / totalMarked) * 100) : 0;
   }, [attendanceStats]);
+
+  // Team Leaders card: every LEAD, then every CO-LEAD, each group A-Z
+  const teamLeaders = useMemo(() => {
+    const rank: Record<string, number> = { LEAD: 0, 'CO-LEAD': 1 };
+    return members
+      .filter((m) => m.role.toUpperCase() in rank)
+      .sort((a, b) => rank[a.role.toUpperCase()] - rank[b.role.toUpperCase()] || a.name.localeCompare(b.name));
+  }, [members]);
 
   // Leaders count (LEAD, CO-LEAD, COORDINATOR)
   const leaderCount = useMemo(() => {
@@ -543,15 +821,22 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl">
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-              style={{ background: avatarColor(user.username) }}
+              style={{ background: avatarColor(loginName) }}
             >
-              {user.username[0].toUpperCase()}
+              {loginName[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-700 truncate">{user.username}</p>
+              <p className="text-xs font-semibold text-slate-700 truncate">{loginName}</p>
               <p className="text-[10px] text-slate-400 truncate">{teamName} Team</p>
             </div>
             <div className="flex items-center gap-1">
+              <button
+                onClick={openCredModal}
+                title="Change username / password"
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+              </button>
               <button
                 onClick={fetchData}
                 disabled={loading}
@@ -641,6 +926,29 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
               >
                 Retry
+              </button>
+            </div>
+          )}
+
+          {/* Action feedback (marking, saving, deleting) */}
+          {actionMessage && (
+            <div
+              className={`mb-6 p-3.5 rounded-2xl border flex items-center justify-between text-sm ${
+                actionMessage.type === 'error'
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                {actionMessage.type === 'error' ? (
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                ) : (
+                  <Check className="w-5 h-5 shrink-0" />
+                )}
+                <span>{actionMessage.text}</span>
+              </div>
+              <button onClick={() => setActionMessage(null)} className="p-1 opacity-60 hover:opacity-100 cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}
@@ -761,8 +1069,17 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       <Calendar className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
                       <p className="text-sm font-semibold text-slate-600">No meetings scheduled for your team yet</p>
                       <p className="text-xs text-slate-400 mt-1">
-                        Upcoming meetings created by administrators will appear here.
+                        Schedule one from the Meetings tab.
                       </p>
+                      <button
+                        onClick={() => {
+                          setActiveNav('Meetings');
+                          openCreateMeeting();
+                        }}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> New Meeting
+                      </button>
                     </div>
                   ) : (
                     <div className="divide-y divide-slate-100">
@@ -860,13 +1177,15 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   {/* Team Leads Roster Card */}
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
                     <h3 className="text-base font-bold text-slate-900 mb-1">Team Leaders</h3>
-                    <p className="text-xs text-slate-500 mb-4">Leads & Coordinators</p>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Leads & Co-leads ({teamLeaders.length})
+                    </p>
 
+                    {teamLeaders.length === 0 && (
+                      <p className="text-xs text-slate-400 py-2 text-center">No leads in your team yet</p>
+                    )}
                     <div className="space-y-3">
-                      {members
-                        .filter((m) => ['LEAD', 'CO-LEAD', 'COORDINATOR'].includes(m.role.toUpperCase()))
-                        .slice(0, 4)
-                        .map((m) => (
+                      {teamLeaders.map((m) => (
                           <div key={m.id} className="flex items-center gap-3">
                             <div
                               className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
@@ -877,7 +1196,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-semibold text-slate-800 truncate">{m.name}</p>
                               <p className="text-[10px] text-slate-400 truncate">
-                                {m.department || 'PSG Tech'} {m.year ? `• Year ${m.year}` : ''}
+                                {m.department || 'PSG Tech'} {m.year ? `• ${m.year}` : ''}
                               </p>
                             </div>
                             <span className={`badge text-[10px] ${ROLE_STYLE[m.role.toUpperCase()] || ''}`}>
@@ -1014,7 +1333,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                               {m.department || <span className="text-slate-300">—</span>}
                             </td>
                             <td className="px-6 py-3.5 text-slate-600">
-                              {m.year ? `Year ${m.year}` : <span className="text-slate-300">—</span>}
+                              {m.year || <span className="text-slate-300">—</span>}
                             </td>
                             <td className="px-6 py-3.5 font-mono text-slate-600">
                               {m.phone || <span className="text-slate-300">—</span>}
@@ -1112,21 +1431,31 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
               {/* Meetings List */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100">
-                  <h3 className="text-base font-bold text-slate-900">
-                    {teamName} Meetings & Sessions ({filteredMeetings.length})
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Showing meetings scheduled specifically for {teamName} or organization-wide (ALL)
-                  </p>
+                <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      {teamName} Meetings & Sessions ({filteredMeetings.length})
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Your team's meetings, plus organization-wide (ALL) sessions run by the admin
+                    </p>
+                  </div>
+                  <button
+                    onClick={openCreateMeeting}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> New Meeting
+                  </button>
                 </div>
 
                 {filteredMeetings.length === 0 ? (
                   <div className="py-16 text-center text-slate-400">
                     <Calendar className="w-12 h-12 mx-auto mb-2 text-slate-300 stroke-1" />
-                    <p className="text-sm font-semibold text-slate-600">No meetings scheduled for your team.</p>
+                    <p className="text-sm font-semibold text-slate-600">
+                      {sessions.length === 0 ? 'No meetings scheduled for your team.' : 'No meetings match the filter.'}
+                    </p>
                     <p className="text-xs text-slate-400 mt-1">
-                      New sessions created by administrators for {teamName} will be displayed here.
+                      Click "New Meeting" to schedule one for {teamName}.
                     </p>
                   </div>
                 ) : (
@@ -1210,8 +1539,33 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                               }}
                               className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                             >
-                              View Attendance
+                              Mark Attendance
                             </button>
+                            {canManage(s) ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => openEditMeeting(s)}
+                                  title="Edit meeting"
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => setDeletingMeeting(s)}
+                                  title="Delete meeting"
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <span
+                                className="text-[10px] text-slate-400 w-[68px] text-center leading-tight"
+                                title="Organization-wide sessions are managed by the admin"
+                              >
+                                Managed by admin
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -1232,8 +1586,17 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   <Calendar className="w-12 h-12 mx-auto mb-2 text-slate-300 stroke-1" />
                   <p className="text-base font-bold text-slate-700">No attendance records available</p>
                   <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                    There are no recorded sessions for your team yet. Once a meeting is held and attendance is recorded, you will be able to review attendance details here.
+                    There are no sessions for your team yet. Schedule a meeting, then mark attendance here.
                   </p>
+                  <button
+                    onClick={() => {
+                      setActiveNav('Meetings');
+                      openCreateMeeting();
+                    }}
+                    className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> New Meeting
+                  </button>
                 </div>
               ) : (
                 <>
@@ -1332,6 +1695,27 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           {sessionMembersList.length} of {members.length} members matching filter
                         </p>
                       </div>
+                      {activeSession && activeSessionStats.unmarked > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-400 hidden sm:inline">
+                            {activeSessionStats.unmarked} unmarked:
+                          </span>
+                          <button
+                            onClick={() => markAllUnmarked('PRESENT')}
+                            disabled={bulkMarking}
+                            className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
+                          >
+                            Mark all Present
+                          </button>
+                          <button
+                            onClick={() => markAllUnmarked('ABSENT')}
+                            disabled={bulkMarking}
+                            className="px-2.5 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
+                          >
+                            Mark all Absent
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="overflow-x-auto">
@@ -1341,7 +1725,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             <th className="px-6 py-3.5">Member</th>
                             <th className="px-6 py-3.5">Role</th>
                             <th className="px-6 py-3.5">Roll Number</th>
-                            <th className="px-6 py-3.5">Status</th>
+                            <th className="px-6 py-3.5">Mark Attendance</th>
                             <th className="px-6 py-3.5">Marked Time</th>
                             <th className="px-6 py-3.5">Notes</th>
                             <th className="px-6 py-3.5 text-right">History</th>
@@ -1372,9 +1756,41 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                   {m.rollNo || <span className="text-slate-300">—</span>}
                                 </td>
                                 <td className="px-6 py-3.5">
-                                  <span className={`badge ${statusInfo.badge}`}>
-                                    {statusInfo.label}
-                                  </span>
+                                  {activeSession && (
+                                    <div className="flex items-center gap-1.5">
+                                      {(
+                                        [
+                                          { status: 'PRESENT', label: 'Present', Icon: Check, on: 'bg-emerald-500 text-white', hover: 'hover:bg-emerald-50 hover:text-emerald-600' },
+                                          { status: 'ABSENT', label: 'Absent', Icon: X, on: 'bg-rose-500 text-white', hover: 'hover:bg-rose-50 hover:text-rose-600' },
+                                          { status: 'INFORMED', label: 'Informed', Icon: FileText, on: 'bg-amber-500 text-white', hover: 'hover:bg-amber-50 hover:text-amber-600' },
+                                        ] as const
+                                      ).map(({ status, label, Icon, on, hover }) => (
+                                        <button
+                                          key={status}
+                                          onClick={() => m.status !== status && markMember(activeSession, m.id, status)}
+                                          disabled={markingIds.has(m.id)}
+                                          title={`Mark ${label}`}
+                                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-all disabled:opacity-60 cursor-pointer ${
+                                            m.status === status ? `${on} shadow-xs` : `bg-slate-100 text-slate-500 ${hover}`
+                                          }`}
+                                        >
+                                          <Icon className="w-3 h-3" />
+                                          <span className="hidden lg:inline">{label}</span>
+                                        </button>
+                                      ))}
+                                      {m.status !== 'UNMARKED' && (
+                                        <button
+                                          onClick={() => markMember(activeSession, m.id, null)}
+                                          disabled={markingIds.has(m.id)}
+                                          title="Clear mark"
+                                          className="p-1 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 disabled:opacity-60 cursor-pointer"
+                                        >
+                                          <RotateCcw className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                      <span className={`sr-only`}>{statusInfo.label}</span>
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="px-6 py-3.5 text-slate-500">
                                   {m.markedAt ? (
@@ -1833,6 +2249,275 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
+          CREATE / EDIT MEETING MODAL
+         ══════════════════════════════════════════════ */}
+      {meetingModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {editingMeeting ? 'Edit Meeting' : 'New Meeting'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">For the {teamName} team</p>
+              </div>
+              <button
+                onClick={() => setMeetingModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMeeting} className="p-6 space-y-4">
+              {meetingError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{meetingError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={200}
+                  value={meetingForm.title}
+                  onChange={(e) => setMeetingForm((p) => ({ ...p, title: e.target.value }))}
+                  placeholder={`e.g. ${teamName} weekly meeting`}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={meetingForm.date}
+                  onChange={(e) => setMeetingForm((p) => ({ ...p, date: e.target.value }))}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                    Start Time
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={meetingForm.startTime}
+                    onChange={(e) => setMeetingForm((p) => ({ ...p, startTime: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                    End Time <span className="normal-case font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={meetingForm.endTime}
+                    onChange={(e) => setMeetingForm((p) => ({ ...p, endTime: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 -mt-2">
+                Slot is set from the start time: before 12:00 is FN, otherwise AN.
+              </p>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Notes <span className="normal-case font-normal">(optional)</span>
+                </label>
+                <textarea
+                  rows={2}
+                  maxLength={1000}
+                  value={meetingForm.notes}
+                  onChange={(e) => setMeetingForm((p) => ({ ...p, notes: e.target.value }))}
+                  placeholder="Venue, agenda..."
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 resize-none"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMeetingModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={meetingSaving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {meetingSaving ? 'Saving...' : editingMeeting ? 'Save Changes' : 'Create Meeting'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
+          CHANGE LOGIN MODAL
+         ══════════════════════════════════════════════ */}
+      {credModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Change Login</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{teamName} team account</p>
+              </div>
+              <button
+                onClick={() => setCredModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCredentials} className="p-6 space-y-4">
+              {credError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{credError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={credForm.currentPassword}
+                  onChange={(e) => setCredForm((p) => ({ ...p, currentPassword: e.target.value }))}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={3}
+                  maxLength={40}
+                  pattern="[A-Za-z0-9._\-]+"
+                  title="Letters, numbers, . _ - only"
+                  autoComplete="username"
+                  value={credForm.username}
+                  onChange={(e) => setCredForm((p) => ({ ...p, username: e.target.value }))}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                    New Password
+                  </label>
+                  <input
+                    type="password"
+                    minLength={6}
+                    autoComplete="new-password"
+                    placeholder="Leave blank to keep"
+                    value={credForm.newPassword}
+                    onChange={(e) => setCredForm((p) => ({ ...p, newPassword: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                    Confirm
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={credForm.confirmPassword}
+                    onChange={(e) => setCredForm((p) => ({ ...p, confirmPassword: e.target.value }))}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 -mt-2">
+                At least 6 characters. Other devices using this login will be signed out.
+              </p>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCredModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={credSaving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {credSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
+          DELETE MEETING CONFIRMATION
+         ══════════════════════════════════════════════ */}
+      {deletingMeeting && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full shadow-xl border border-slate-200 p-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">Delete this meeting?</h3>
+            <p className="text-xs text-slate-500 mt-1.5">
+              <span className="font-semibold text-slate-700">{deletingMeeting.title}</span> on {deletingMeeting.date}
+              {Object.keys(deletingMeeting.records || {}).length > 0 &&
+                ` and its ${Object.keys(deletingMeeting.records || {}).length} attendance mark(s)`}{' '}
+              will be removed permanently.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setDeletingMeeting(null)}
+                disabled={deleteBusy}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteMeeting}
+                disabled={deleteBusy}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                {deleteBusy ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

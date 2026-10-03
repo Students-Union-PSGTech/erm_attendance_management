@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAdmin, requireAuth } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 import { validateBody } from '../middleware/validate';
 import { sessionCreateSchema, sessionUpdateSchema } from '../validators/session.validators';
 import * as sessions from '../controllers/sessions.controller';
@@ -10,9 +10,10 @@ sessionsRouter.use(requireAuth);
 sessionsRouter.get('/', sessions.listSessions);
 sessionsRouter.get('/:id', sessions.getSession);
 
-sessionsRouter.post('/', requireAdmin, validateBody(sessionCreateSchema), sessions.createSession);
-sessionsRouter.patch('/:id', requireAdmin, validateBody(sessionUpdateSchema), sessions.updateSession);
-sessionsRouter.delete('/:id', requireAdmin, sessions.deleteSession);
 
-sessionsRouter.put('/:id/records/:memberId', requireAdmin, sessions.markAttendance);
-sessionsRouter.delete('/:id/records/:memberId', requireAdmin, sessions.clearAttendance);
+sessionsRouter.post('/', validateBody(sessionCreateSchema), sessions.createSession);
+sessionsRouter.patch('/:id', validateBody(sessionUpdateSchema), sessions.updateSession);
+sessionsRouter.delete('/:id', sessions.deleteSession);
+
+sessionsRouter.put('/:id/records/:memberId', sessions.markAttendance);
+sessionsRouter.delete('/:id/records/:memberId', sessions.clearAttendance);
