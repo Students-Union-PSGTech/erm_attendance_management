@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "backend": "npm --prefix backend run dev",
     "backend:sync": "tsx backend/scripts/sync_backend.ts",
     "backend:parse": "tsx backend/scripts/parse_and_sync.ts",
     "backend:update-initial": "tsx backend/scripts/update_initial_data.ts"
@@ -19,6 +20,8 @@
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",

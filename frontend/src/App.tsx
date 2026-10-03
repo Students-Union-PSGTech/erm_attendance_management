@@ -18,12 +18,14 @@ export default function App() {
     fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` }
     })
-      .then(res => {
+      .then(async res => {
         if (!res.ok) throw new Error('Invalid session');
-        return res.json();
+        const text = await res.text();
+        return text ? JSON.parse(text) : {};
       })
       .then(data => {
         if (data.user) setUser(data.user);
+        else localStorage.removeItem('token');
       })
       .catch(() => {
         localStorage.removeItem('token');

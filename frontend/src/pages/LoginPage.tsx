@@ -24,16 +24,29 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username.trim(), password })
       });
-      const data = await res.json();
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Body was empty or not valid JSON
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || 'Incorrect credentials. Please try again.');
+        if (!data && (res.status === 502 || res.status === 504 || res.status === 500 || res.status === 404)) {
+          throw new Error('Unable to connect to backend server. Please make sure the backend is running.');
+        }
+        throw new Error(data?.error || data?.message || 'Incorrect credentials. Please try again.');
+      }
+
+      if (!data?.token) {
+        throw new Error('Invalid response from server.');
       }
 
       localStorage.setItem('token', data.token);
       onLogin(data.user);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
