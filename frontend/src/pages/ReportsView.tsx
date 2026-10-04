@@ -46,17 +46,17 @@ export default function ReportsView({ members }: ReportsViewProps) {
       setLoading(true);
       try {
         const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
-        
+
         const [attRes, sessionsRes] = await Promise.all([
           fetch('/api/stats/attendance', { headers }),
           fetch('/api/sessions', { headers })
         ]);
-        
+
         if (attRes.ok) {
           const attData = await attRes.json();
           setAttendanceStats(attData.members || []);
         }
-        
+
         if (sessionsRes.ok) {
           const sessionsData = await sessionsRes.json();
           const computedStats = (sessionsData.sessions || []).map((s: any) => {
@@ -88,7 +88,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
         setLoading(false);
       }
     };
-    
+
     fetchStats();
   }, []);
 
@@ -98,7 +98,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
     doc.text('Member Directory Report', 14, 15);
     doc.setFontSize(9);
     doc.text(`Generated on ${new Date().toLocaleDateString()}`, 14, 22);
-    
+
     const headers = [['Name', 'Team', 'Role', 'Roll No', 'Department', 'Year', 'Phone']];
     const data = members.map(m => [
       m.name,
@@ -119,7 +119,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
       alternateRowStyles: { fillColor: [245, 247, 250] },
       margin: { top: 28 }
     });
-    
+
     doc.save(`members_export_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
@@ -151,27 +151,29 @@ export default function ReportsView({ members }: ReportsViewProps) {
       alternateRowStyles: { fillColor: [245, 247, 250] },
       margin: { top: 28 }
     });
-    
+
     doc.save(`attendance_export_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin shadow-lg shadow-indigo-500/20"></div>
+        <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin shadow-lg shadow-purple-500/20"></div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-8 duration-700 pb-12">
-      
+    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 pb-12 text-slate-100">
+
       {/* Tab Navigation */}
-      <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full max-w-fit self-center border border-slate-200">
+      <div className="rect-card p-1.5 flex gap-1 rounded-md w-full max-w-fit self-center border border-white/10 bg-[#120F1D]/80 backdrop-blur-xl">
         <button
           onClick={() => setActiveTab('performance')}
-          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
-            activeTab === 'performance' ? 'bg-white text-emerald-600 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex-1 sm:flex-none cursor-pointer ${
+            activeTab === 'performance'
+              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.35)]'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
         >
           <Users className="w-4 h-4" />
@@ -179,8 +181,10 @@ export default function ReportsView({ members }: ReportsViewProps) {
         </button>
         <button
           onClick={() => setActiveTab('stats')}
-          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
-            activeTab === 'stats' ? 'bg-white text-purple-600 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex-1 sm:flex-none cursor-pointer ${
+            activeTab === 'stats'
+              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.35)]'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
         >
           <CalendarDays className="w-4 h-4" />
@@ -188,8 +192,10 @@ export default function ReportsView({ members }: ReportsViewProps) {
         </button>
         <button
           onClick={() => setActiveTab('exports')}
-          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
-            activeTab === 'exports' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex-1 sm:flex-none cursor-pointer ${
+            activeTab === 'exports'
+              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.35)]'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
         >
           <Download className="w-4 h-4" />
@@ -199,24 +205,25 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
       <div className="max-w-4xl mx-auto w-full">
         {activeTab === 'exports' && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2 mb-4">
-              <Download className="w-5 h-5 text-blue-600" />
-              Data Exports
+          <div className="rect-card-elevated p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <h2 className="text-base font-bold text-white flex items-center gap-2 mb-2 tracking-wide uppercase">
+              <Download className="w-4 h-4 text-purple-400" />
+              Data Exports & Reports
             </h2>
+            <p className="text-xs text-slate-400 mb-6">Export detailed member and attendance reports in clean PDF format.</p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <button 
+              <button
                 onClick={downloadMembersPDF}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-xl font-medium transition-all"
+                className="btn-purple-glow flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
                 <Users className="w-4 h-4" />
                 Download Members PDF
               </button>
-              <button 
+              <button
                 onClick={downloadAttendancePDF}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-xl font-medium transition-all"
+                className="btn-rect-secondary flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
-                <Activity className="w-4 h-4" />
+                <Activity className="w-4 h-4 text-emerald-400" />
                 Download Attendance PDF
               </button>
             </div>
@@ -224,164 +231,176 @@ export default function ReportsView({ members }: ReportsViewProps) {
         )}
 
         {activeTab === 'stats' && (
-          <div className="bg-white/80 backdrop-blur-2xl border border-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col max-h-[650px] min-h-[300px] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="p-5 sm:p-6 border-b border-slate-100/50 shrink-0 flex items-center justify-between bg-white/50">
+          <div className="rect-card-elevated flex flex-col max-h-[650px] min-h-[300px] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="p-5 border-b border-white/10 shrink-0 flex items-center justify-between bg-white/[0.02]">
               <div>
-                <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
-                  <div className="p-2.5 bg-purple-100 text-purple-600 rounded-xl">
-                    <CalendarDays className="w-5 h-5" />
+                <h2 className="text-base font-bold text-white flex items-center gap-2.5 uppercase tracking-wide">
+                  <div className="p-1.5 bg-purple-950/60 text-purple-400 border border-purple-500/30 rounded-md">
+                    <CalendarDays className="w-4 h-4" />
                   </div>
                   Session Pulse
                 </h2>
-                <p className="text-sm text-slate-500 mt-1.5 sm:ml-[52px] font-medium">Daily attendance aggregates & trends</p>
+                <p className="text-xs text-slate-400 mt-1 font-mono">Daily attendance aggregates & trends</p>
               </div>
             </div>
-            
-            <div className="flex-1 overflow-auto p-3 sm:p-5 pb-8">
-              <div className="space-y-4">
-                {sessionStats.length === 0 ? (
-                  <div className="flex items-center justify-center h-40 text-slate-400 font-medium">No session data available.</div>
-                ) : (
-                  sessionStats.map((d, i) => (
-                    <div key={d.id} className="group flex items-center justify-between gap-3 p-4 sm:p-5 bg-white border border-slate-100 rounded-2xl hover:shadow-[0_8px_20px_rgb(0,0,0,0.04)] hover:border-purple-200 hover:-translate-y-0.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: `${i * 60}ms`, animationFillMode: 'both' }}>
-                      <div className="flex items-center gap-3 sm:gap-5 min-w-0">
-                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center shrink-0 group-hover:bg-purple-50 group-hover:border-purple-100 transition-colors">
-                          <span className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1 group-hover:text-purple-400 transition-colors">{new Date(d.date).toLocaleDateString('en-US', { month: 'short' })}</span>
-                          <span className="text-xl font-black text-slate-700 leading-none group-hover:text-purple-700 transition-colors">{new Date(d.date).getDate()}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-900 text-sm sm:text-base group-hover:text-purple-700 transition-colors truncate">{d.title}</p>
-                          <p className="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            {d.present} of {d.marked} present
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-col items-end gap-2 w-16 sm:w-20 shrink-0">
-                        <span className={`text-lg sm:text-xl font-black tracking-tight ${
-                          d.presentPct >= 75 ? 'text-emerald-500' :
-                          d.presentPct >= 50 ? 'text-amber-500' : 'text-rose-500'
-                        }`}>
-                          {d.presentPct}%
+
+            <div className="flex-1 overflow-auto p-4 space-y-3 custom-scrollbar">
+              {sessionStats.length === 0 ? (
+                <div className="flex items-center justify-center h-40 text-slate-500 font-mono text-xs">No session data available.</div>
+              ) : (
+                sessionStats.map((d) => (
+                  <div
+                    key={d.id}
+                    className="rect-card p-4 flex items-center justify-between gap-3 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all duration-200"
+                  >
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-12 h-12 rounded-md bg-[#1B1430] border border-purple-500/30 flex flex-col items-center justify-center shrink-0">
+                        <span className="text-[9px] font-bold text-purple-400 uppercase leading-none mb-0.5">
+                          {new Date(d.date).toLocaleDateString('en-US', { month: 'short' })}
                         </span>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                          <div 
-                            className={`h-full rounded-full transition-all duration-1000 ${
-                              d.presentPct >= 75 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' :
-                              d.presentPct >= 50 ? 'bg-gradient-to-r from-amber-400 to-amber-500' : 'bg-gradient-to-r from-rose-400 to-rose-500'
-                            }`}
-                            style={{ width: `${d.presentPct}%` }}
-                          />
-                        </div>
+                        <span className="text-lg font-black text-white leading-none font-mono">
+                          {new Date(d.date).getDate()}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-white text-sm truncate">{d.title}</p>
+                        <p className="text-xs text-slate-400 font-mono mt-1 flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34D399]" />
+                          {d.present} of {d.marked} present
+                        </p>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
+
+                    <div className="flex flex-col items-end gap-1.5 w-20 shrink-0">
+                      <span className={`text-base font-bold font-mono tracking-tight ${
+                        d.presentPct >= 75 ? 'text-emerald-400' :
+                        d.presentPct >= 50 ? 'text-amber-400' : 'text-rose-400'
+                      }`}>
+                        {d.presentPct}%
+                      </span>
+                      <div className="w-full h-1.5 bg-slate-900 rounded-none overflow-hidden border border-white/5">
+                        <div
+                          className={`h-full transition-all duration-700 ${
+                            d.presentPct >= 75 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' :
+                            d.presentPct >= 50 ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-rose-500 to-red-400'
+                          }`}
+                          style={{ width: `${d.presentPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
 
         {activeTab === 'performance' && (
-          <div className="bg-white/80 backdrop-blur-2xl border border-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col max-h-[650px] min-h-[300px] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="p-5 sm:p-6 border-b border-slate-100/50 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/50">
+          <div className="rect-card-elevated flex flex-col max-h-[650px] min-h-[300px] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="p-5 border-b border-white/10 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/[0.02]">
               <div>
-                <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
-                  <div className="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl">
-                    <TrendingUp className="w-5 h-5" />
+                <h2 className="text-base font-bold text-white flex items-center gap-2.5 uppercase tracking-wide">
+                  <div className="p-1.5 bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 rounded-md">
+                    <TrendingUp className="w-4 h-4" />
                   </div>
                   Member Performance
                 </h2>
-                <p className="text-sm text-slate-500 mt-1.5 sm:ml-[52px] font-medium">Cumulative individual statistics</p>
+                <p className="text-xs text-slate-400 mt-1 font-mono">Cumulative individual attendance metrics</p>
               </div>
               <div className="flex flex-col lg:flex-row items-center gap-3">
-                <div className="relative w-full lg:w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <div className="relative w-full lg:w-60">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                   <input
                     type="text"
                     placeholder="Search name, team, role..."
                     value={memberSearchQuery}
                     onChange={(e) => setMemberSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+                    className="rect-input w-full pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500"
                   />
                 </div>
-                <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200 shrink-0">
+                <div className="flex items-center gap-1 bg-[#0A0713] p-1 rounded-md border border-white/10 shrink-0">
                   <button
                     onClick={() => setShowDefaulters(false)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${!showDefaulters ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-3 py-1 rounded-sm text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      !showDefaulters ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                    }`}
                   >
                     All Members
                   </button>
                   <button
                     onClick={() => setShowDefaulters(true)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${showDefaulters ? 'bg-white text-rose-600 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-rose-600'}`}
+                    className={`px-3 py-1 rounded-sm text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                      showDefaulters ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-rose-400'
+                    }`}
                   >
                     &lt; 75% Attendance
                   </button>
                 </div>
               </div>
             </div>
-            
-            <div className="flex-1 overflow-auto p-3 sm:p-5 pb-8">
-              <div className="space-y-4">
-                {(() => {
-                  const activeMembers = attendanceStats.filter(s => s.total > 0);
-                  let displayedMembers = showDefaulters ? activeMembers.filter(s => s.presentPct < 75) : activeMembers;
-                  
-                  if (memberSearchQuery) {
-                    const q = memberSearchQuery.toLowerCase();
-                    displayedMembers = displayedMembers.filter(s => 
-                      s.name.toLowerCase().includes(q) ||
-                      s.team.toLowerCase().includes(q) ||
-                      s.role.toLowerCase().includes(q)
-                    );
-                  }
 
-                  if (displayedMembers.length === 0) {
-                    return <div className="flex items-center justify-center h-40 text-slate-400 font-medium">No members match this criteria.</div>;
-                  }
+            <div className="flex-1 overflow-auto p-4 space-y-3 custom-scrollbar">
+              {(() => {
+                const activeMembers = attendanceStats.filter(s => s.total > 0);
+                let displayedMembers = showDefaulters ? activeMembers.filter(s => s.presentPct < 75) : activeMembers;
 
-                  return displayedMembers.map((s, i) => (
-                    <div key={s.memberId} className="group flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:shadow-[0_8px_20px_rgb(0,0,0,0.04)] hover:border-emerald-200 hover:-translate-y-0.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: `${i * 40}ms`, animationFillMode: 'both' }}>
-                      <div className="flex-1 min-w-0 pr-2 sm:pr-4">
-                        <p className="font-bold text-slate-900 truncate group-hover:text-emerald-700 transition-colors text-sm mb-1.5">{s.name}</p>
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 bg-slate-50 text-slate-500 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-100">{s.team}</span>
-                          <span className="text-[10px] text-slate-400 font-semibold">{s.role}</span>
-                        </div>
+                if (memberSearchQuery) {
+                  const q = memberSearchQuery.toLowerCase();
+                  displayedMembers = displayedMembers.filter(s =>
+                    s.name.toLowerCase().includes(q) ||
+                    s.team.toLowerCase().includes(q) ||
+                    s.role.toLowerCase().includes(q)
+                  );
+                }
+
+                if (displayedMembers.length === 0) {
+                  return <div className="flex items-center justify-center h-40 text-slate-500 font-mono text-xs">No members match this criteria.</div>;
+                }
+
+                return displayedMembers.map((s) => (
+                  <div
+                    key={s.memberId}
+                    className="rect-card p-4 flex items-center justify-between gap-3 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all duration-200"
+                  >
+                    <div className="flex-1 min-w-0 pr-4">
+                      <p className="font-semibold text-white truncate text-sm mb-1">{s.name}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 text-[9px] font-bold uppercase tracking-wider rounded-sm font-mono">
+                          {s.team}
+                        </span>
+                        <span className="text-[11px] text-slate-400">{s.role}</span>
                       </div>
-                      
-                      <div className="flex items-center gap-3 sm:gap-6 shrink-0">
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attended</span>
-                          <span className="text-sm font-black text-slate-700">
-                            {s.present} <span className="text-slate-300 mx-0.5">/</span> {s.total}
-                          </span>
-                        </div>
-                        
-                        <div className="flex flex-col items-end gap-2 w-16 border-l border-slate-100 pl-3 sm:pl-5">
-                          <span className={`text-lg font-black tracking-tight ${
-                            s.presentPct >= 75 ? 'text-emerald-500' :
-                            s.presentPct >= 50 ? 'text-amber-500' : 'text-rose-500'
-                          }`}>
-                            {s.presentPct}%
-                          </span>
-                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                            <div 
-                              className={`h-full rounded-full transition-all duration-1000 ${
-                                s.presentPct >= 75 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' :
-                                s.presentPct >= 50 ? 'bg-gradient-to-r from-amber-400 to-amber-500' : 'bg-gradient-to-r from-rose-400 to-rose-500'
-                              }`}
-                              style={{ width: `${s.presentPct}%` }}
-                            />
-                          </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Attended</span>
+                        <span className="text-xs font-bold text-slate-200 font-mono">
+                          {s.present} <span className="text-slate-600">/</span> {s.total}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-1.5 w-20 border-l border-white/10 pl-4">
+                        <span className={`text-base font-bold font-mono tracking-tight ${
+                          s.presentPct >= 75 ? 'text-emerald-400' :
+                          s.presentPct >= 50 ? 'text-amber-400' : 'text-rose-400'
+                        }`}>
+                          {s.presentPct}%
+                        </span>
+                        <div className="w-full h-1.5 bg-slate-900 rounded-none overflow-hidden border border-white/5">
+                          <div
+                            className={`h-full transition-all duration-700 ${
+                              s.presentPct >= 75 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' :
+                              s.presentPct >= 50 ? 'bg-gradient-to-r from-amber-500 to-orange-400' : 'bg-gradient-to-r from-rose-500 to-red-400'
+                            }`}
+                            style={{ width: `${s.presentPct}%` }}
+                          />
                         </div>
                       </div>
                     </div>
-                  ));
-                })()}
-              </div>
+                  </div>
+                ));
+              })()}
             </div>
           </div>
         )}

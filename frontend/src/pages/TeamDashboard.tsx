@@ -30,9 +30,12 @@ import {
   ChevronUp,
   ArrowDown,
   ArrowUpDown,
-  Minus
+  Minus,
+  ChevronRight,
+  Sparkles
 } from 'lucide-react';
 import ReportsView from './ReportsView';
+import TopographyBackground from '../components/TopographyBackground';
 
 interface TeamDashboardProps {
   user: User;
@@ -123,21 +126,21 @@ const NAV: { icon: React.ElementType; label: NavKey }[] = [
 ];
 
 const ROLE_STYLE: Record<string, string> = {
-  LEAD: 'bg-amber-50 text-amber-700 border border-amber-200',
-  'CO-LEAD': 'bg-purple-50 text-purple-700 border border-purple-200',
-  COORDINATOR: 'bg-blue-50 text-blue-700 border border-blue-200',
-  CORE: 'bg-slate-100 text-slate-600 border border-slate-200',
+  LEAD: 'bg-[#2E1848] text-[#D8B4FE] border border-purple-500/40',
+  'CO-LEAD': 'bg-[#1E1B4B] text-[#A5B4FC] border border-indigo-500/40',
+  COORDINATOR: 'bg-[#064E3B] text-[#6EE7B7] border border-emerald-500/40',
+  CORE: 'bg-[#1E1E2E] text-[#CBD5E1] border border-white/10',
 };
 
 const STATUS_STYLE: Record<string, { badge: string; label: string }> = {
-  PRESENT: { badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'Present' },
-  ABSENT: { badge: 'bg-rose-50 text-rose-700 border border-rose-200', label: 'Absent' },
-  INFORMED: { badge: 'bg-amber-50 text-amber-700 border border-amber-200', label: 'Informed' },
-  UNMARKED: { badge: 'bg-slate-50 text-slate-500 border border-slate-200', label: 'Unmarked' },
+  PRESENT: { badge: 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30', label: 'Present' },
+  ABSENT: { badge: 'bg-rose-950/60 text-rose-400 border border-rose-500/30', label: 'Absent' },
+  INFORMED: { badge: 'bg-purple-950/60 text-purple-300 border border-purple-500/30', label: 'Informed' },
+  UNMARKED: { badge: 'bg-slate-900/60 text-slate-400 border border-slate-700/50', label: 'Unmarked' },
 };
 
 const avatarColor = (name: string) => {
-  const colors = ['#1D4ED8', '#7C3AED', '#059669', '#DC2626', '#D97706', '#0891B2'];
+  const colors = ['#9333EA', '#7C3AED', '#2563EB', '#059669', '#DB2777', '#EA580C'];
   return colors[name.charCodeAt(0) % colors.length];
 };
 
@@ -199,8 +202,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     const config = sortConfigs[sortIndex];
     return (
       <div className="flex items-center ml-1">
-        {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />}
-        {sortIndex > 0 && <span className="text-[9px] font-bold text-indigo-600 ml-0.5">{sortIndex + 1}</span>}
+        {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-purple-400" /> : <ArrowDown className="w-3 h-3 text-purple-400" />}
+        {sortIndex > 0 && <span className="text-[9px] font-bold text-purple-400 ml-0.5">{sortIndex + 1}</span>}
       </div>
     );
   };
@@ -722,9 +725,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     if (!activeSession) return;
     const targets = sessionMembersList;
     if (targets.length === 0) return;
-    
+
     setBulkMarking(true);
-    
+
     const now = new Date().toISOString();
     const updatedRecords = { ...(activeSession.records || {}) };
     targets.forEach(m => {
@@ -732,7 +735,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     });
 
     const previousSession = { ...activeSession };
-    
+
     // Optimistic UI update
     setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, records: updatedRecords } : s));
 
@@ -742,9 +745,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         headers: getAuthHeaders(),
         body: JSON.stringify({ records: updatedRecords })
       });
-      
+
       if (!res.ok) throw new Error(`Bulk mark failed (${res.status})`);
-      
+
       flash('success', `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} ${status.toLowerCase()}`);
     } catch (err: any) {
       console.error(err);
@@ -771,49 +774,68 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     return members.filter((m) => ['LEAD', 'CO-LEAD', 'COORDINATOR'].includes(m.role.toUpperCase())).length;
   }, [members]);
 
+  const teamLeads = useMemo(() => {
+    return members.filter((m) => m.role === 'LEAD' || m.role === 'CO-LEAD');
+  }, [members]);
+
+  const teamCoords = useMemo(() => {
+    return members.filter((m) => m.role === 'COORDINATOR');
+  }, [members]);
+
+  const teamCore = useMemo(() => {
+    return members.filter((m) => m.role === 'CORE');
+  }, [members]);
+
+  const teamRecentAbsentees = useMemo(() => {
+    return recentAbsentees.filter(
+      (s: any) => s.team === 'ALL' || s.team.split(',').map((t: string) => t.trim()).includes(teamName)
+    );
+  }, [recentAbsentees, teamName]);
+
   return (
-    <div className="flex h-dvh bg-[#F7F8FC] overflow-hidden text-slate-900">
+    <div className="flex h-dvh text-slate-100 overflow-hidden relative">
+      <TopographyBackground />
+
       {/* ── Mobile Sidebar Backdrop ── */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-xs transition-opacity"
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs transition-opacity"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-white border-r border-slate-100 py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${
-          sidebarOpen
-            ? 'w-60 translate-x-0 opacity-100 shadow-xl md:shadow-none'
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#0E0B18]/85 backdrop-blur-xl border-r border-white/10 py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${sidebarOpen
+            ? 'w-60 translate-x-0 opacity-100 shadow-[0_0_50px_rgba(0,0,0,0.8)] md:shadow-none'
             : 'w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden opacity-0 p-0 border-0 pointer-events-none'
-        }`}
+          }`}
       >
         {/* Brand */}
         <div className="flex items-center gap-2.5 px-3 mb-8">
           <img
             src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
             alt="Logo"
-            className="w-9 h-9 rounded-xl object-cover shadow-xs shrink-0"
+            className="w-9 h-9 rounded-md object-cover shadow-xs shrink-0 border border-purple-500/30"
           />
           <div className="min-w-0 flex-1">
-            <p className="text-slate-900 font-semibold text-sm leading-tight truncate">Students Union</p>
-            <p className="text-indigo-600 font-medium text-[10px] tracking-wide uppercase">
+            <p className="text-white font-bold text-sm leading-tight truncate">Students Union</p>
+            <p className="text-purple-400 font-mono text-[10px] tracking-wide uppercase">
               {teamName} Team Portal
             </p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="ml-auto p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer shrink-0"
+            className="ml-auto p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-md transition-colors cursor-pointer shrink-0"
             title="Close sidebar"
             aria-label="Close sidebar"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-0.5">
+        <nav className="flex-1 space-y-1">
           {NAV.map(({ icon: Icon, label }) => {
             const isActive = activeNav === label;
             return (
@@ -823,7 +845,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   setActiveNav(label);
                   if (window.innerWidth < 768) setSidebarOpen(false);
                 }}
-                className={`nav-item ${isActive ? 'nav-active' : ''}`}
+                className={`nav-item-rect ${isActive ? 'nav-active-rect' : ''}`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="truncate">{label}</span>
@@ -833,24 +855,24 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         </nav>
 
         {/* User Card */}
-        <div className="border-t border-slate-100 pt-4">
-          <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl">
+        <div className="border-t border-white/10 pt-4">
+          <div className="flex items-center gap-2.5 px-2 py-2 rounded-md bg-white/[0.03] border border-white/5">
             <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+              className="w-8 h-8 rounded-md flex items-center justify-center text-white text-xs font-semibold shrink-0"
               style={{ background: avatarColor(loginName) }}
             >
               {loginName[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-700 truncate">{loginName}</p>
-              <p className="text-[10px] text-slate-400 truncate">{teamName} Team</p>
+              <p className="text-xs font-semibold text-white truncate">{loginName}</p>
+              <p className="text-[10px] text-purple-400 font-mono truncate">{teamName} Team</p>
             </div>
             <div className="flex items-center gap-1">
               <button
                 onClick={fetchData}
                 disabled={loading}
                 title="Refresh Data"
-                className={`p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer ${loading ? 'animate-spin opacity-50 cursor-not-allowed' : ''
+                className={`p-1.5 rounded-md hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer ${loading ? 'animate-spin opacity-50 cursor-not-allowed' : ''
                   }`}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -858,7 +880,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               <button
                 onClick={handleLogout}
                 title="Sign out"
-                className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                className="p-1.5 rounded-md hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
@@ -868,27 +890,27 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       </aside>
 
       {/* ── Main Area ── */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative z-10">
         {/* Content Container */}
-        <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 sm:py-7">
+        <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 sm:py-7 custom-scrollbar">
           {/* Header */}
           <div className="flex items-center gap-3.5 mb-6">
             <button
               onClick={() => setSidebarOpen((prev) => !prev)}
-              className="p-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-indigo-600 rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center shrink-0"
+              className="btn-rect-secondary p-2.5 cursor-pointer flex items-center justify-center shrink-0"
               title={sidebarOpen ? 'Close navigation' : 'Open navigation'}
               aria-label="Toggle navigation menu"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5 text-purple-300" />
             </button>
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-bold text-slate-900">{activeNav}</h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                <h1 className="text-xl font-black text-white uppercase tracking-wide">{activeNav}</h1>
+                <span className="badge-reactbits-new">
                   {teamName} Team
                 </span>
               </div>
-              <p className="text-sm text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
                 {new Date().toLocaleDateString('en-IN', {
                   weekday: 'long',
                   year: 'numeric',
@@ -901,14 +923,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
           {/* Error Banner */}
           {error && (
-            <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 flex items-center justify-between text-sm">
+            <div className="mb-6 p-4 rounded-md bg-rose-950/70 border border-rose-500/40 text-rose-300 flex items-center justify-between text-xs font-mono backdrop-blur-xl">
               <div className="flex items-center gap-3">
-                <AlertCircle className="w-5 h-5 shrink-0" />
+                <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
                 <span>{error}</span>
               </div>
               <button
                 onClick={fetchData}
-                className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                className="btn-rect-secondary px-3 py-1 text-xs cursor-pointer"
               >
                 Retry
               </button>
@@ -918,16 +940,17 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           {/* Action feedback (marking, saving, deleting) */}
           {actionMessage && (
             <div
-              className={`mb-6 p-3.5 rounded-2xl border flex items-center justify-between text-sm ${actionMessage.type === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-700'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                }`}
+              className={`mb-6 p-3.5 rounded-md border flex items-center justify-between text-xs font-mono backdrop-blur-xl ${
+                actionMessage.type === 'error'
+                  ? 'bg-rose-950/70 border-rose-500/40 text-rose-300'
+                  : 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300'
+              }`}
             >
               <div className="flex items-center gap-3">
                 {actionMessage.type === 'error' ? (
-                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 ) : (
-                  <Check className="w-5 h-5 shrink-0" />
+                  <Check className="w-4 h-4 shrink-0 text-emerald-400" />
                 )}
                 <span>{actionMessage.text}</span>
               </div>
@@ -940,8 +963,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           {/* Loading State */}
           {loading && (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-              <div className="w-9 h-9 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3"></div>
-              <p className="text-xs font-medium">Loading {teamName} team data...</p>
+              <div className="w-9 h-9 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-3 shadow-[0_0_15px_rgba(147,51,234,0.35)]"></div>
+              <p className="text-xs font-mono text-purple-300">Loading {teamName} team data...</p>
             </div>
           )}
 
@@ -949,86 +972,461 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               VIEW 1: OVERVIEW
              ══════════════════════════════════════════════ */}
           {!loading && activeNav === 'Overview' && (
-            <div className="space-y-6">
-              {/* Hero Banner */}
-              <div className="bg-gradient-to-br from-indigo-700 via-indigo-600 to-blue-600 rounded-3xl p-6 sm:p-8 text-white shadow-lg shadow-indigo-600/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-medium text-indigo-100 mb-2">
-                    <Award className="w-3.5 h-3.5" />
-                    <span>Students Union • {teamName} Team</span>
-                  </div>
-                  <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">
-                    {members.length}{' '}
-                    <span className="text-xl sm:text-2xl font-normal text-indigo-100">Team Members</span>
-                  </h2>
-                  <p className="text-xs text-indigo-100 mt-1 max-w-md">
-                    Overview of your team's roster, active meetings, and overall attendance metrics.
-                  </p>
-                </div>
-                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-xs border border-white/20 self-start sm:self-auto shrink-0">
-                  <Users className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
-                </div>
-              </div>
-
-              {/* Stat Cards Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="stat-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Members
-                    </span>
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                      <Users className="w-4 h-4" />
+            <div className="space-y-8 pb-12">
+              {/* ── Hero Banner (Enlarged with Live Status & Quick Action Buttons) ── */}
+              <div className="rect-card rect-card-hover-pop p-6 sm:p-9 border-purple-500/30 bg-gradient-to-r from-[#170E2B]/95 via-[#1E1238]/90 to-[#120F1D]/95 shadow-[0_0_40px_rgba(147,51,234,0.2)]">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2.5 mb-3">
+                      <span className="badge-reactbits-new flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                        {teamName} Operations Portal
+                      </span>
+                      <span className="text-xs text-purple-300 font-mono flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                        Students Union Domain Control
+                      </span>
+                      <span className="text-xs text-slate-400 font-mono hidden sm:inline-block">
+                        • Verified Session Access
+                      </span>
                     </div>
+                    <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight flex items-baseline gap-3.5 font-mono">
+                      {members.length}{' '}
+                      <span className="text-base sm:text-xl font-normal text-purple-300">
+                        {teamName} Team Members
+                      </span>
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-300 font-mono mt-2 max-w-xl">
+                      Central command for {teamName} domain: mark meeting attendance, track member consistency, review absentees, and inspect team rosters.
+                    </p>
                   </div>
-                  <div className="text-2xl font-bold text-slate-900">{members.length}</div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {leaderCount} in leadership roles
-                  </p>
-                </div>
 
-                <div className="stat-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Meetings
-                    </span>
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  {/* Fast Action Buttons on Hero */}
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 shrink-0">
+                    <button
+                      onClick={() => setActiveNav('Attendance')}
+                      className="btn-purple-glow px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
+                    >
                       <Calendar className="w-4 h-4" />
-                    </div>
+                      <span>Mark Attendance</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveNav('Reports')}
+                      className="btn-rect-secondary px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
+                    >
+                      <BarChart2 className="w-4 h-4 text-purple-300" />
+                      <span>Team Reports</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveNav('Members')}
+                      className="btn-rect-secondary px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
+                    >
+                      <Users className="w-4 h-4 text-indigo-300" />
+                      <span>Team Roster</span>
+                    </button>
                   </div>
-                  <div className="text-2xl font-bold text-slate-900">{sessions.length}</div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {sessions.length === 0 ? 'No meetings yet' : 'Team & Union sessions'}
-                  </p>
                 </div>
 
-                <div className="stat-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Avg Attendance
-                    </span>
-                    <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                      <Activity className="w-4 h-4" />
-                    </div>
+                {/* Summary Metric Ribbon inside Hero */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mt-6 pt-6 border-t border-white/10">
+                  <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
+                    <p className="text-[10px] uppercase font-mono text-slate-400">Total Members</p>
+                    <p className="text-lg font-bold text-white font-mono mt-0.5">{members.length} Enrolled</p>
                   </div>
-                  <div className="text-2xl font-bold text-slate-900">{overallTeamAttendancePct}%</div>
-                  <p className="text-[11px] text-slate-400 mt-1">Across all recorded sessions</p>
-                </div>
-
-                <div className="stat-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Team Domain
-                    </span>
-                    <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                      <Award className="w-4 h-4" />
-                    </div>
+                  <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
+                    <p className="text-[10px] uppercase font-mono text-slate-400">Active Meetings</p>
+                    <p className="text-lg font-bold text-purple-300 font-mono mt-0.5">{sessions.length} Recorded</p>
                   </div>
-                  <div className="text-2xl font-bold text-slate-900">{teamName}</div>
-                  <p className="text-[11px] text-slate-400 mt-1">Team-scoped access</p>
+                  <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
+                    <p className="text-[10px] uppercase font-mono text-slate-400">Attendance Rate</p>
+                    <p className="text-lg font-bold text-emerald-400 font-mono mt-0.5">{overallTeamAttendancePct}% Average</p>
+                  </div>
+                  <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
+                    <p className="text-[10px] uppercase font-mono text-slate-400">Team Leads</p>
+                    <p className="text-lg font-bold text-pink-300 font-mono mt-0.5">{leaderCount} Leaders</p>
+                  </div>
                 </div>
               </div>
 
+              {/* ── Stat Cards Grid (BIGGER Cards + Hover Pop) ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div
+                  onClick={() => setActiveNav('Members')}
+                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group min-h-[160px] flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
+                      Team Roster
+                    </span>
+                    <div className="w-10 h-10 rounded-md bg-purple-950/60 border border-purple-500/30 text-purple-400 flex items-center justify-center">
+                      <Users className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-black text-white font-mono group-hover:text-purple-300 transition-colors">
+                      {members.length}
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      {leaderCount} in leadership roles
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] font-mono text-purple-300 mt-3 pt-2 border-t border-white/5">
+                    <span>Explore members</span>
+                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveNav('Attendance')}
+                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group min-h-[160px] flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
+                      Sessions
+                    </span>
+                    <div className="w-10 h-10 rounded-md bg-indigo-950/60 border border-indigo-500/30 text-indigo-400 flex items-center justify-center">
+                      <Calendar className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-black text-white font-mono group-hover:text-indigo-300 transition-colors">
+                      {sessions.length}
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      {sessions.length === 0 ? 'No meetings created' : 'Team & Union sessions'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] font-mono text-indigo-300 mt-3 pt-2 border-t border-white/5">
+                    <span>Manage meetings</span>
+                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveNav('Attendance')}
+                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group min-h-[160px] flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
+                      Consistency
+                    </span>
+                    <div className="w-10 h-10 rounded-md bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                      <Activity className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-black text-emerald-400 font-mono group-hover:text-emerald-300 transition-colors">
+                      {overallTeamAttendancePct}%
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      Average member attendance
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] font-mono text-emerald-300 mt-3 pt-2 border-t border-white/5">
+                    <span>Check attendance register</span>
+                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+
+                <div
+                  className="rect-card rect-card-hover-pop p-6 group min-h-[160px] flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
+                      Domain
+                    </span>
+                    <div className="w-10 h-10 rounded-md bg-pink-950/60 border border-pink-500/30 text-pink-400 flex items-center justify-center">
+                      <Award className="w-5 h-5" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-3xl font-black text-purple-300 font-mono">
+                      {teamName}
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      Team-scoped access portal
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mt-3 pt-2 border-t border-white/5">
+                    <span className="text-emerald-400">Authenticated</span>
+                    <span>Role: {user.role}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Team Role Breakdown & Leadership Architecture ── */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2.5">
+                    <Users className="w-5 h-5 text-purple-400" />
+                    {teamName} Team Structure & Roles
+                  </h3>
+                  <span className="text-xs font-mono text-slate-400">{members.length} Total Registered</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div
+                    onClick={() => {
+                      setFilterRole('LEAD');
+                      setActiveNav('Members');
+                    }}
+                    className="rect-card rect-card-hover-pop p-5 bg-purple-950/40 border-purple-500/30 cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold uppercase font-mono text-purple-300">
+                        Domain Leads & Co-Leads
+                      </span>
+                      <span className="text-xs font-mono font-bold text-purple-300 px-2 py-0.5 rounded bg-purple-900/50">
+                        {teamLeads.length}
+                      </span>
+                    </div>
+                    <div className="text-2xl font-black text-white font-mono mt-1">
+                      {teamLeads.length > 0 ? teamLeads.map(l => l.name).join(', ') : 'None assigned'}
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono mt-2">
+                      Responsible for meeting coordination and team directives
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => {
+                      setFilterRole('COORDINATOR');
+                      setActiveNav('Members');
+                    }}
+                    className="rect-card rect-card-hover-pop p-5 bg-emerald-950/40 border-emerald-500/30 cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold uppercase font-mono text-emerald-300">
+                        Coordinators
+                      </span>
+                      <span className="text-xs font-mono font-bold text-emerald-300 px-2 py-0.5 rounded bg-emerald-900/50">
+                        {teamCoords.length}
+                      </span>
+                    </div>
+                    <div className="text-2xl font-black text-white font-mono mt-1">
+                      {teamCoords.length} Assigned
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono mt-2">
+                      Assisting leads in day-to-day session tracking
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => {
+                      setFilterRole('CORE');
+                      setActiveNav('Members');
+                    }}
+                    className="rect-card rect-card-hover-pop p-5 bg-[#141024] border-white/10 cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold uppercase font-mono text-slate-300">
+                        Core Members
+                      </span>
+                      <span className="text-xs font-mono font-bold text-indigo-300 px-2 py-0.5 rounded bg-indigo-950/60">
+                        {teamCore.length}
+                      </span>
+                    </div>
+                    <div className="text-2xl font-black text-white font-mono mt-1">
+                      {teamCore.length} Active Members
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono mt-2">
+                      Active participants in domain operations and tasks
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Last 3 Sessions Absentees Pulse (Team Scoped) ── */}
+              <div className="rect-card-elevated p-6 border-purple-500/25">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-white/10">
+                  <div>
+                    <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2.5">
+                      <Activity className="w-5 h-5 text-pink-400" />
+                      Recent Meetings Attendance Pulse
+                    </h3>
+                    <p className="text-xs text-slate-400 font-mono mt-0.5">
+                      Latest recorded sessions and absent students in {teamName} domain
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setActiveNav('Attendance')}
+                    className="btn-rect-secondary px-3.5 py-1.5 text-xs font-mono flex items-center gap-2 cursor-pointer self-start sm:self-auto"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                    <span>View All Meetings</span>
+                  </button>
+                </div>
+
+                {teamRecentAbsentees.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 font-mono text-xs">
+                    <Calendar className="w-10 h-10 mx-auto mb-2 text-slate-600 stroke-1" />
+                    <p>No recent meetings recorded for {teamName} team yet.</p>
+                    <button
+                      onClick={openCreateMeeting}
+                      className="btn-purple-glow px-4 py-2 mt-3 text-xs inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Create New Meeting
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    {teamRecentAbsentees.slice(0, 3).map((session: any, idx: number) => {
+                      const targetCount = session.totalTargetCount || (session.presentCount + session.absentCount) || 1;
+                      const presentPct = Math.round(((session.presentCount || 0) / Math.max(1, targetCount)) * 100);
+
+                      return (
+                        <div
+                          key={session.id || idx}
+                          className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between border-white/10 hover:border-purple-400/50"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="badge-reactbits-new truncate max-w-[120px]">
+                                {session.team === 'ALL' ? 'All Union' : `${session.team} Team`}
+                              </span>
+                              <span className="text-[11px] font-mono text-slate-400">
+                                {session.date ? new Date(session.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'Recent'}
+                              </span>
+                            </div>
+                            <h4 className="text-sm font-bold text-white line-clamp-1 mt-1 font-mono">
+                              {session.topic || session.name || 'Team Attendance Session'}
+                            </h4>
+
+                            {/* Attendance health bar */}
+                            <div className="mt-3">
+                              <div className="flex items-center justify-between text-xs font-mono mb-1.5">
+                                <span className="text-slate-400">Attendance Rate</span>
+                                <span className={`font-bold ${presentPct >= 80 ? 'text-emerald-400' : presentPct >= 60 ? 'text-amber-400' : 'text-rose-400'}`}>
+                                  {presentPct}% ({session.presentCount}/{targetCount})
+                                </span>
+                              </div>
+                              <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    presentPct >= 80 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' :
+                                    presentPct >= 60 ? 'bg-gradient-to-r from-amber-500 to-yellow-400' :
+                                    'bg-gradient-to-r from-rose-500 to-pink-500'
+                                  }`}
+                                  style={{ width: `${presentPct}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Absentees snippet */}
+                            <div className="mt-4 pt-3 border-t border-white/5">
+                              <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
+                                <span className="flex items-center gap-1 text-rose-300">
+                                  <UserX className="w-3.5 h-3.5 text-rose-400" />
+                                  Absentees ({session.absentCount || 0})
+                                </span>
+                              </div>
+                              {session.absentees && session.absentees.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                                  {session.absentees.slice(0, 4).map((a: any, aIdx: number) => (
+                                    <span
+                                      key={a.id || aIdx}
+                                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-rose-200"
+                                    >
+                                      {a.name}
+                                    </span>
+                                  ))}
+                                  {session.absentees.length > 4 && (
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">
+                                      +{session.absentees.length - 4} more
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] font-mono text-emerald-400">
+                                  ✨ Perfect attendance recorded!
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              setSelectedSessionId(session.id);
+                              setActiveNav('Attendance');
+                            }}
+                            className="mt-4 w-full btn-rect-secondary py-2 text-xs font-mono flex items-center justify-center gap-2 cursor-pointer hover:border-purple-400/50"
+                          >
+                            <span>Mark / Edit Attendance</span>
+                            <ChevronRight className="w-3.5 h-3.5 text-purple-300" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Operations & Fast Navigation Launchpad (3 Big Cards) ── */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div
+                  onClick={() => setActiveNav('Attendance')}
+                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-purple-500/20 hover:border-purple-500/60 flex flex-col justify-between min-h-[170px]"
+                >
+                  <div>
+                    <div className="w-10 h-10 rounded-md bg-purple-950/60 border border-purple-500/30 text-purple-400 flex items-center justify-center mb-3">
+                      <Calendar className="w-5 h-5" />
+                    </div>
+                    <h4 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors">
+                      Attendance Marking Desk
+                    </h4>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      Quickly mark Present, Absent, or Informed status for your team members with live counts.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-mono text-purple-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
+                    <span>Open Attendance</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveNav('Reports')}
+                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-pink-500/20 hover:border-pink-500/60 flex flex-col justify-between min-h-[170px]"
+                >
+                  <div>
+                    <div className="w-10 h-10 rounded-md bg-pink-950/60 border border-pink-500/30 text-pink-400 flex items-center justify-center mb-3">
+                      <BarChart2 className="w-5 h-5" />
+                    </div>
+                    <h4 className="text-base font-bold text-white group-hover:text-pink-300 transition-colors">
+                      Team Attendance Analytics
+                    </h4>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      Inspect overall attendance rate, multi-session breakdowns, and download Excel reports.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-mono text-pink-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
+                    <span>View Analytics</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setActiveNav('Members')}
+                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-indigo-500/20 hover:border-indigo-500/60 flex flex-col justify-between min-h-[170px]"
+                >
+                  <div>
+                    <div className="w-10 h-10 rounded-md bg-indigo-950/60 border border-indigo-500/30 text-indigo-400 flex items-center justify-center mb-3">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <h4 className="text-base font-bold text-white group-hover:text-indigo-300 transition-colors">
+                      Team Member Directory
+                    </h4>
+                    <p className="text-xs text-slate-400 font-mono mt-1">
+                      Search roster, view member contact details, and check detailed individual attendance histories.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-mono text-indigo-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
+                    <span>Open Team Roster</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1038,21 +1436,21 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           {!loading && activeNav === 'Members' && (
             <div className="space-y-5">
               {/* Filter Controls Card */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+              <div className="rect-card p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
                 {/* Search Bar */}
                 <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchMemberQuery}
                     onChange={(e) => setSearchMemberQuery(e.target.value)}
                     placeholder="Search by name, roll no, department, phone..."
-                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
+                    className="rect-input w-full pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500"
                   />
                   {searchMemberQuery && (
                     <button
                       onClick={() => setSearchMemberQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1060,40 +1458,39 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </div>
 
                 {/* Role Dropdown */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
-                    <Filter className="w-3 h-3" /> Role:
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-purple-300 flex items-center gap-1 uppercase tracking-wider">
+                    <Filter className="w-3 h-3 text-purple-400" /> Role:
                   </span>
                   <select
                     value={filterRole}
                     onChange={(e) => setFilterRole(e.target.value)}
-                    className="pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all appearance-none cursor-pointer"
-                    style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px top 50%', backgroundSize: '8px auto' }}
+                    className="rect-input py-2 px-3 text-xs text-slate-200 cursor-pointer bg-[#0A0713]"
                   >
                     {['ALL', 'LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(role => (
-                      <option key={role} value={role}>{role}</option>
+                      <option key={role} value={role} className="bg-[#120F1D] text-slate-200">{role}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               {/* Members Table Card */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="rect-card-elevated overflow-hidden">
+                <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wide">
                       {teamName} Roster ({sortedMembers.length})
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-400 font-mono mt-0.5">
                       Showing only members registered in your team
                     </p>
                   </div>
                 </div>
 
                 {filteredMembers.length === 0 ? (
-                  <div className="py-16 text-center text-slate-400">
-                    <Users className="w-12 h-12 mx-auto mb-2 text-slate-300 stroke-1" />
-                    <p className="text-sm font-semibold text-slate-600">
+                  <div className="py-16 text-center text-slate-500">
+                    <Users className="w-12 h-12 mx-auto mb-2 text-slate-600 stroke-1" />
+                    <p className="text-sm font-mono text-slate-400">
                       {members.length === 0
                         ? 'No members in your team yet.'
                         : 'No members match the current filter.'}
@@ -1104,7 +1501,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           setSearchMemberQuery('');
                           setFilterRole('ALL');
                         }}
-                        className="mt-3 text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                        className="mt-3 text-xs font-mono text-purple-400 hover:text-purple-300 underline cursor-pointer"
                       >
                         Reset filters
                       </button>
@@ -1113,7 +1510,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50/80 border-b border-slate-100 text-slate-500 uppercase tracking-wider font-semibold">
+                      <thead className="bg-[#0A0713]/90 border-b border-white/10 text-slate-400 uppercase tracking-wider font-mono">
                         <tr>
                           {['Member', 'Role', 'Roll Number', 'Department', 'Year', 'Phone']
                             .filter(header => !hiddenColumns.includes(header))
@@ -1125,7 +1522,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                               return (
                                 <th
                                   key={header}
-                                  className="px-6 py-3.5 group hover:bg-slate-100 transition-colors"
+                                  className="px-6 py-3.5 group hover:bg-white/[0.03] transition-colors"
                                 >
                                   <div className="flex items-center justify-between">
                                     <div
@@ -1137,7 +1534,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     </div>
                                     <button
                                       onClick={() => setHiddenColumns(prev => [...prev, header])}
-                                      className="hidden md:block opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
+                                      className="hidden md:block opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all cursor-pointer"
                                       title={`Hide ${header}`}
                                     >
                                       <Minus className="w-3.5 h-3.5" />
@@ -1146,19 +1543,19 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                 </th>
                               );
                             })}
-                          <th className="px-4 sm:px-6 py-3.5 text-right w-24 sticky right-0 bg-slate-50">
+                          <th className="px-4 sm:px-6 py-3.5 text-right w-24 sticky right-0 bg-[#0A0713]/90">
                             {hiddenColumns.length > 0 ? (
                               <div className="relative group inline-block text-left">
-                                <button className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Restore columns">
+                                <button className="p-1 text-slate-400 hover:text-purple-400 hover:bg-purple-500/10 rounded transition-all cursor-pointer" title="Restore columns">
                                   <Plus className="w-4 h-4" />
                                 </button>
-                                <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1.5">Restore</div>
+                                <div className="absolute right-0 top-full mt-1 w-40 rect-card-elevated p-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1.5 font-mono">Restore</div>
                                   {hiddenColumns.map(col => (
                                     <button
                                       key={col}
                                       onClick={() => setHiddenColumns(prev => prev.filter(c => c !== col))}
-                                      className="w-full text-left px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-lg flex items-center justify-between group/btn transition-colors cursor-pointer"
+                                      className="w-full text-left px-2 py-1.5 text-xs text-slate-300 hover:bg-purple-950/40 hover:text-purple-300 rounded flex items-center justify-between group/btn transition-colors cursor-pointer"
                                     >
                                       {col}
                                       <Plus className="w-3 h-3 opacity-0 group-hover/btn:opacity-100" />
@@ -1170,63 +1567,63 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-white/5">
                         {sortedMembers.map((m) => (
-                          <tr key={m.id} className="hover:bg-indigo-50/20 transition-colors">
+                          <tr key={m.id} className="hover:bg-purple-950/20 transition-colors">
                             {!hiddenColumns.includes('Member') && (
                               <td className="px-6 py-3.5">
                                 <div className="flex items-center gap-3">
                                   <div
-                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+                                    className="w-8 h-8 rounded-md flex items-center justify-center text-white text-xs font-semibold shrink-0"
                                     style={{ background: avatarColor(m.name) }}
                                   >
                                     {m.name[0].toUpperCase()}
                                   </div>
-                                  <span className="font-semibold text-slate-900">{m.name}</span>
+                                  <span className="font-semibold text-white">{m.name}</span>
                                 </div>
                               </td>
                             )}
                             {!hiddenColumns.includes('Role') && (
                               <td className="px-6 py-3.5">
-                                <span className={`badge ${ROLE_STYLE[m.role.toUpperCase()] || 'bg-slate-100 text-slate-600'}`}>
+                                <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase tracking-wider ${ROLE_STYLE[m.role.toUpperCase()] || 'bg-[#1E1E2E] text-slate-300 border border-white/10'}`}>
                                   {m.role}
                                 </span>
                               </td>
                             )}
                             {!hiddenColumns.includes('Roll Number') && (
-                              <td className="px-6 py-3.5 font-mono text-slate-600">
-                                {m.rollNo || <span className="text-slate-300">—</span>}
+                              <td className="px-6 py-3.5 font-mono text-slate-300">
+                                {m.rollNo || <span className="text-slate-600">—</span>}
                               </td>
                             )}
                             {!hiddenColumns.includes('Department') && (
-                              <td className="px-6 py-3.5 text-slate-600">
-                                {m.department || <span className="text-slate-300">—</span>}
+                              <td className="px-6 py-3.5 text-slate-300">
+                                {m.department || <span className="text-slate-600">—</span>}
                               </td>
                             )}
                             {!hiddenColumns.includes('Year') && (
-                              <td className="px-6 py-3.5 text-slate-600">
-                                {m.year || <span className="text-slate-300">—</span>}
+                              <td className="px-6 py-3.5 text-slate-300 font-mono">
+                                {m.year || <span className="text-slate-600">—</span>}
                               </td>
                             )}
                             {!hiddenColumns.includes('Phone') && (
-                              <td className="px-6 py-3.5 font-mono text-slate-600">
-                                {m.phone || <span className="text-slate-300">—</span>}
+                              <td className="px-6 py-3.5 font-mono text-slate-300">
+                                {m.phone || <span className="text-slate-600">—</span>}
                               </td>
                             )}
 
-                            <td className="px-3 sm:px-6 py-3.5 text-right sticky right-0 bg-white shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.12)] md:shadow-none">
+                            <td className="px-3 sm:px-6 py-3.5 text-right sticky right-0 bg-[#0E0B18]/90 backdrop-blur-md">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => handleOpenHistory(m)}
                                   title="View Attendance History"
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-purple-300 hover:bg-purple-500/20 transition-colors cursor-pointer"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => handleOpenEdit(m)}
                                   title="Edit Member Details"
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-purple-300 hover:bg-purple-500/20 transition-colors cursor-pointer"
                                 >
                                   <Edit3 className="w-4 h-4" />
                                 </button>
@@ -1250,20 +1647,20 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               {!activeSession ? (
                 <>
                   {/* ── Last 3 Sessions Absentees Section ── */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs mb-4">
-                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                  <div className="rect-card-elevated p-5 mb-2">
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                        <div className="w-10 h-10 rounded-md bg-rose-950/60 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
                           <UserX className="w-5 h-5" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-slate-900">Last 3 Sessions Absentees</h3>
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
+                            <h3 className="text-base font-bold text-white uppercase tracking-wide">Last 3 Sessions Absentees</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-purple-950/60 text-purple-300 border border-purple-500/30 font-mono font-bold uppercase">
                               {recentAbsentees.length} {recentAbsentees.length === 1 ? 'session' : 'sessions'}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                          <p className="text-xs text-slate-400 font-mono mt-0.5">
                             Overview of absent members across the three most recent attendance sessions
                           </p>
                         </div>
@@ -1272,13 +1669,13 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                     {absenteesLoading ? (
                       <div className="py-8 flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-rose-600 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
                       </div>
                     ) : recentAbsentees.length === 0 ? (
-                      <div className="py-8 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                        <UserX className="w-8 h-8 mx-auto mb-2 text-slate-400 opacity-60" />
-                        <p className="text-sm font-semibold text-slate-700">No previous sessions available.</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
+                      <div className="py-8 text-center bg-[#0A0713]/50 rounded-md border border-dashed border-white/10">
+                        <UserX className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+                        <p className="text-sm font-mono text-slate-300">No previous sessions available.</p>
+                        <p className="text-xs text-slate-500 font-mono mt-0.5">
                           Absentees will automatically be displayed here once sessions are recorded.
                         </p>
                       </div>
@@ -1287,51 +1684,51 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         {recentAbsentees.map((s) => {
                           const isExpanded = expandedSessionIds[s.id] ?? true;
                           return (
-                            <div 
+                            <div
                               key={s.id}
-                              className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:border-slate-300 transition-all shadow-2xs"
+                              className="rect-card p-4 flex flex-col justify-between hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all"
                             >
                               <div>
                                 <div className="flex items-start justify-between gap-2 mb-2">
                                   <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                      <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 rounded text-[10px] font-bold tracking-wider uppercase">
+                                      <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
                                         {s.team.split(',').join(', ')}
                                       </span>
-                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
-                                        s.sessionSlot === 'FN' ? 'bg-amber-100 text-amber-800' :
-                                        s.sessionSlot === 'AN' ? 'bg-orange-100 text-orange-800' :
-                                        'bg-indigo-100 text-indigo-800'
+                                      <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold font-mono uppercase ${
+                                        s.sessionSlot === 'FN' ? 'bg-amber-950/60 text-amber-300 border border-amber-500/30' :
+                                        s.sessionSlot === 'AN' ? 'bg-orange-950/60 text-orange-300 border border-orange-500/30' :
+                                        'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'
                                       }`}>
                                         {s.sessionSlot}
                                       </span>
                                     </div>
-                                    <h4 className="font-bold text-slate-900 text-sm leading-snug line-clamp-1" title={s.title}>
+                                    <h4 className="font-bold text-white text-sm leading-snug line-clamp-1" title={s.title}>
                                       {s.title}
                                     </h4>
                                   </div>
-                                  <span className="px-2.5 py-1 bg-rose-100 text-rose-800 font-bold rounded-lg text-xs whitespace-nowrap shrink-0">
-                                    {s.absentCount} {s.absentCount === 1 ? 'Absent' : 'Absent'}
+                                  <span className="px-2 py-0.5 bg-rose-950/70 border border-rose-500/40 text-rose-300 font-mono font-bold rounded-sm text-xs whitespace-nowrap shrink-0">
+                                    {s.absentCount} Absent
                                   </span>
                                 </div>
 
-                                <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
-                                  <span className="flex items-center gap-1 font-medium">
-                                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                <div className="flex items-center gap-3 text-xs text-slate-400 font-mono mb-3">
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="w-3.5 h-3.5 text-purple-400" />
                                     {s.date}
                                   </span>
                                   <span className="flex items-center gap-1">
-                                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                    <Clock className="w-3.5 h-3.5 text-purple-400" />
                                     {s.startTime} {s.endTime ? `- ${s.endTime}` : ''}
                                   </span>
                                 </div>
 
                                 <div className="mb-3">
-                                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1.5">
+                                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 mb-1.5">
                                     <span>Absentee List ({s.absentees.length})</span>
-                                    <button 
+                                    <button
                                       onClick={() => setExpandedSessionIds(prev => ({ ...prev, [s.id]: !isExpanded }))}
-                                      className="text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer flex items-center gap-0.5"
+                                      className="text-purple-400 hover:text-purple-300 font-semibold cursor-pointer flex items-center gap-0.5"
                                     >
                                       {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                       {isExpanded ? 'Hide' : 'Show'}
@@ -1340,18 +1737,18 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                                   {isExpanded && (
                                     s.absentees.length === 0 ? (
-                                      <div className="bg-emerald-50 border border-emerald-200/80 rounded-lg p-2.5 text-center text-xs text-emerald-800 font-medium">
+                                      <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-sm p-2 text-center text-xs text-emerald-300 font-mono">
                                         🎉 100% Attendance — Zero Absentees!
                                       </div>
                                     ) : (
-                                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-lg border border-slate-200 bg-white p-2">
+                                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-sm border border-white/10 bg-[#0A0713] p-2 custom-scrollbar">
                                         {s.absentees.map((ab: any) => (
-                                          <div key={ab.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded hover:bg-slate-50">
+                                          <div key={ab.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded-sm hover:bg-white/5">
                                             <div className="min-w-0 flex-1 pr-2">
-                                              <p className="font-semibold text-slate-800 truncate">{ab.name}</p>
-                                              <p className="text-[10px] text-slate-400 truncate">{ab.rollNo || ab.department || 'No Roll No'}</p>
+                                              <p className="font-semibold text-white truncate">{ab.name}</p>
+                                              <p className="text-[10px] text-slate-400 font-mono truncate">{ab.rollNo || ab.department || 'No Roll No'}</p>
                                             </div>
-                                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium shrink-0">
+                                            <span className="text-[9px] px-1.5 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm font-mono shrink-0">
                                               {ab.team}
                                             </span>
                                           </div>
@@ -1364,7 +1761,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                               <button
                                 onClick={() => setSelectedSessionId(s.id)}
-                                className="w-full mt-2 py-2 px-3 bg-white hover:bg-slate-100 text-slate-700 hover:text-indigo-600 border border-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                                className="btn-purple-glow w-full mt-2 py-2 px-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
                               >
                                 View & Manage Session
                                 <ArrowRight className="w-3.5 h-3.5" />
@@ -1376,41 +1773,41 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     )}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <h2 className="text-xl font-bold text-slate-900">Recent Sessions</h2>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                    <h2 className="text-base font-bold text-white uppercase tracking-wide">Recent Sessions</h2>
                     <div className="flex items-center gap-2 sm:gap-4">
                       <div className="relative flex-1 sm:flex-none">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input 
-                          type="text" 
-                          placeholder="Search sessions..." 
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                        <input
+                          type="text"
+                          placeholder="Search sessions..."
                           value={searchMeetingQuery}
                           onChange={(e) => setSearchMeetingQuery(e.target.value)}
-                          className="w-full sm:w-64 pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
+                          className="rect-input w-full sm:w-64 pl-10 pr-10 py-2 text-xs text-white placeholder-slate-500"
                         />
                         {searchMeetingQuery && (
-                          <button onClick={() => setSearchMeetingQuery('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                          <button onClick={() => setSearchMeetingQuery('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer">
                             <X className="w-4 h-4" />
                           </button>
                         )}
                       </div>
-                      <button 
+                      <button
                         onClick={openCreateMeeting}
-                        className="shrink-0 px-3 sm:px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors shadow-sm shadow-indigo-600/20 flex items-center gap-2 text-sm cursor-pointer"
+                        className="btn-purple-glow shrink-0 px-4 py-2 text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
-                        <span className="hidden sm:inline">New Session</span><span className="sm:hidden">New</span>
+                        <span>New Session</span>
                       </button>
                     </div>
                   </div>
 
                   {sessions.length === 0 ? (
-                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center flex-1 flex flex-col items-center justify-center">
-                      <div className="w-16 h-16 bg-indigo-50 text-indigo-500 rounded-2xl flex items-center justify-center mb-4 mx-auto">
-                        <Calendar className="w-8 h-8" />
+                    <div className="rect-card-elevated p-8 text-center flex-1 flex flex-col items-center justify-center">
+                      <div className="w-14 h-14 bg-purple-950/60 text-purple-400 border border-purple-500/30 rounded-md flex items-center justify-center mb-4 mx-auto">
+                        <Calendar className="w-7 h-7" />
                       </div>
-                      <h3 className="text-lg font-bold text-slate-900 mb-2">No Sessions Yet</h3>
-                      <p className="text-slate-500 max-w-sm mx-auto mb-6 text-sm">
+                      <h3 className="text-base font-bold text-white mb-2 uppercase tracking-wide">No Sessions Yet</h3>
+                      <p className="text-slate-400 max-w-sm mx-auto mb-6 text-xs font-mono">
                         You haven't created any attendance sessions yet. Click "New Session" to start tracking.
                       </p>
                     </div>
@@ -1419,36 +1816,36 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       {sortSessions(sessions).filter(s => {
                         if (!searchMeetingQuery) return true;
                         const q = searchMeetingQuery.toLowerCase();
-                        return s.title.toLowerCase().includes(q) || 
-                               s.team.toLowerCase().includes(q) || 
-                               s.date.includes(q) || 
-                               (s.sessionSlot || '').toLowerCase().includes(q);
+                        return s.title.toLowerCase().includes(q) ||
+                          s.team.toLowerCase().includes(q) ||
+                          s.date.includes(q) ||
+                          (s.sessionSlot || '').toLowerCase().includes(q);
                       }).map(session => {
-                        const targetCount = members.filter(m => session.team.split(',').map(t=>t.trim()).includes(m.team)).length;
+                        const targetCount = members.filter(m => session.team.split(',').map(t => t.trim()).includes(m.team)).length;
                         const markedCount = session.records ? Object.keys(session.records).filter(id => members.some(m => m.id === id)).length : 0;
                         const progress = targetCount === 0 ? 0 : Math.round((markedCount / targetCount) * 100);
-                        
+
                         return (
-                          <div 
-                            key={session.id} 
+                          <div
+                            key={session.id}
                             onClick={() => setSelectedSessionId(session.id)}
-                            className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer group"
+                            className="rect-card p-5 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all cursor-pointer group"
                           >
                             <div className="flex items-start justify-between mb-4">
                               <div>
                                 <div className="flex items-center gap-2 mb-2">
-                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold tracking-wider uppercase">
+                                  <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
                                     {session.team.split(',').join(', ')}
                                   </span>
-                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${
-                                    session.sessionSlot === 'FN' ? 'bg-amber-50 text-amber-600' :
-                                    session.sessionSlot === 'AN' ? 'bg-orange-50 text-orange-600' :
-                                    'bg-indigo-50 text-indigo-600'
+                                  <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold font-mono uppercase ${
+                                    session.sessionSlot === 'FN' ? 'bg-amber-950/60 text-amber-300 border border-amber-500/30' :
+                                    session.sessionSlot === 'AN' ? 'bg-orange-950/60 text-orange-300 border border-orange-500/30' :
+                                    'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'
                                   }`}>
                                     {session.sessionSlot || 'FN'}
                                   </span>
                                 </div>
-                                <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                                <h3 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors">
                                   {session.title}
                                 </h3>
                               </div>
@@ -1458,43 +1855,43 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     onClick={(e) => { e.stopPropagation(); setDeletingMeeting(session); }}
                                     title="Delete session"
                                     aria-label={`Delete ${session.title}`}
-                                    className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    className="p-1.5 rounded-sm text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 )}
-                                <div className="bg-indigo-50 text-indigo-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                <div className="bg-purple-950/60 border border-purple-500/30 text-purple-400 p-2 rounded-sm group-hover:bg-purple-600 group-hover:text-white transition-colors">
                                   <ArrowRight className="w-4 h-4" />
                                 </div>
                               </div>
                             </div>
-                            
-                            <div className="flex items-center gap-6 text-sm text-slate-500 mb-4">
+
+                            <div className="flex items-center gap-6 text-xs text-slate-400 font-mono mb-4">
                               <div className="flex items-center gap-1.5">
-                                <Calendar className="w-4 h-4" />
+                                <Calendar className="w-3.5 h-3.5 text-purple-400" />
                                 {session.date}
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <Clock className="w-4 h-4" />
+                                <Clock className="w-3.5 h-3.5 text-purple-400" />
                                 {session.startTime} {session.endTime ? `- ${session.endTime}` : ''}
                               </div>
                             </div>
-                            
+
                             {session.notes && (
-                              <p className="text-sm text-slate-600 mb-5 line-clamp-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                              <p className="text-xs text-slate-300 mb-5 line-clamp-2 bg-[#0A0713] p-2.5 rounded-sm border border-white/5 font-mono">
                                 {session.notes}
                               </p>
                             )}
-                            
+
                             <div>
-                              <div className="flex items-center justify-between text-xs mb-1.5">
-                                <span className="font-semibold text-slate-700">Attendance Progress</span>
-                                <span className="text-slate-500">{markedCount} / {targetCount} Marked</span>
+                              <div className="flex items-center justify-between text-xs font-mono mb-1.5">
+                                <span className="text-slate-400">Attendance Progress</span>
+                                <span className="text-purple-300 font-bold">{markedCount} / {targetCount} Marked</span>
                               </div>
-                              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                <div 
-                                  className={`h-full rounded-full transition-all duration-1000 ${progress === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} 
-                                  style={{ width: `${progress}%` }} 
+                              <div className="h-1.5 w-full bg-slate-900 rounded-none overflow-hidden border border-white/5">
+                                <div
+                                  className={`h-full transition-all duration-700 ${progress === 100 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-purple-600 to-indigo-500'}`}
+                                  style={{ width: `${progress}%` }}
                                 />
                               </div>
                             </div>
@@ -1506,92 +1903,92 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </>
               ) : (
                 <>
-                {/* Detailed Session View Header */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                    <div className="flex items-center gap-4">
-                      <button 
-                        onClick={() => setSelectedSessionId('')}
-                        className="p-2 -ml-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-                      >
-                        <ChevronLeft className="w-5 h-5" />
-                      </button>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-1">
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-[10px] font-bold tracking-wider uppercase">
-                            {activeSession.team.split(',').join(', ')}
-                          </span>
-                          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5" />
-                            {activeSession.date}
-                          </span>
-                          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5" />
-                            {activeSession.startTime} {activeSession.endTime ? `- ${activeSession.endTime}` : ''}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <h2 className="text-xl font-bold text-slate-900">{activeSession.title}</h2>
-                          {canManage(activeSession) && (
-                            <button
-                              onClick={() => setDeletingMeeting(activeSession)}
-                              title="Delete session"
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {canManage(activeSession) ? (
-                      <div className="mt-2 w-full lg:w-3/4">
-                        <textarea
-                          placeholder="Add session remarks here... (e.g. Special instructions, delays)"
-                          defaultValue={activeSession.notes}
-                          onBlur={(e) => handleUpdateSessionRemarks(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all resize-none h-[44px] focus:h-20"
-                        />
-                      </div>
-                    ) : (
-                      activeSession.notes && (
-                        <div className="flex items-center gap-2 mt-2 w-full lg:w-3/4">
-                          <div className="w-full text-sm text-slate-600 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm leading-relaxed whitespace-pre-wrap">
-                            <span className="font-bold text-slate-700 mr-2">Remarks:</span>
-                            {activeSession.notes}
+                  {/* Detailed Session View Header */}
+                  <div className="rect-card-elevated p-5">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => setSelectedSessionId('')}
+                          className="btn-rect-secondary p-2 cursor-pointer"
+                        >
+                          <ChevronLeft className="w-5 h-5 text-purple-300" />
+                        </button>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-1">
+                            <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
+                              {activeSession.team.split(',').join(', ')}
+                            </span>
+                            <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                              {activeSession.date}
+                            </span>
+                            <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-purple-400" />
+                              {activeSession.startTime} {activeSession.endTime ? `- ${activeSession.endTime}` : ''}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <h2 className="text-lg font-bold text-white uppercase tracking-wide">{activeSession.title}</h2>
+                            {canManage(activeSession) && (
+                              <button
+                                onClick={() => setDeletingMeeting(activeSession)}
+                                title="Delete session"
+                                className="p-1.5 rounded-sm text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
-                      )
-                    )}
-                  </div>
+                      </div>
+
+                      {canManage(activeSession) ? (
+                        <div className="mt-2 w-full lg:w-3/4">
+                          <textarea
+                            placeholder="Add session remarks here... (e.g. Special instructions, delays)"
+                            defaultValue={activeSession.notes}
+                            onBlur={(e) => handleUpdateSessionRemarks(e.target.value)}
+                            className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500 resize-none h-[44px] focus:h-20"
+                          />
+                        </div>
+                      ) : (
+                        activeSession.notes && (
+                          <div className="flex items-center gap-2 mt-2 w-full lg:w-3/4">
+                            <div className="w-full text-xs text-slate-300 bg-[#0A0713] px-3 py-2 rounded-sm border border-white/5 font-mono leading-relaxed whitespace-pre-wrap">
+                              <span className="font-bold text-purple-300 mr-2 uppercase">Remarks:</span>
+                              {activeSession.notes}
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
 
                     {/* Selected Session Stats Banner */}
                     {activeSession && (
                       <div className="pt-4 grid grid-cols-3 gap-3">
-                        <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-100">
-                          <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">
+                        <div className="p-3 rounded-md bg-emerald-950/40 border border-emerald-500/30">
+                          <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wide">
                             Present
                           </span>
-                          <div className="text-xl font-bold text-emerald-700">
+                          <div className="text-xl font-black text-emerald-300 font-mono">
                             {activeSessionStats.present}
                           </div>
                         </div>
 
-                        <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-100">
-                          <span className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide">
+                        <div className="p-3 rounded-md bg-rose-950/40 border border-rose-500/30">
+                          <span className="text-[10px] font-mono font-bold text-rose-400 uppercase tracking-wide">
                             Absent
                           </span>
-                          <div className="text-xl font-bold text-rose-700">
+                          <div className="text-xl font-black text-rose-300 font-mono">
                             {activeSessionStats.absent}
                           </div>
                         </div>
 
-                        <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-100">
-                          <span className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide">
+                        <div className="p-3 rounded-md bg-purple-950/40 border border-purple-500/30">
+                          <span className="text-[10px] font-mono font-bold text-purple-300 uppercase tracking-wide">
                             Informed
                           </span>
-                          <div className="text-xl font-bold text-amber-700">
+                          <div className="text-xl font-black text-purple-200 font-mono">
                             {activeSessionStats.informed}
                           </div>
                         </div>
@@ -1600,81 +1997,95 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   </div>
 
                   {/* Session Members Attendance Table */}
-                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col min-h-0 mt-2">
-                    <div className="overflow-auto flex-1 p-0">
-                      <table className="w-full text-left border-collapse">
-                        <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
+                  <div className="rect-card-elevated overflow-hidden flex-1 flex flex-col min-h-0 mt-2">
+                    <div className="overflow-auto flex-1 p-0 custom-scrollbar">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-[#0A0713]/90 sticky top-0 z-10 border-b border-white/10 font-mono">
                           <tr>
-                            <th className="px-3 sm:px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Member</th>
-                            <th className="hidden sm:table-cell px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
-                            <th className="px-3 sm:px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                            <th className="px-3 sm:px-6 py-3 text-slate-400 uppercase tracking-wider">Member</th>
+                            <th className="hidden sm:table-cell px-6 py-3 text-slate-400 uppercase tracking-wider">Role</th>
+                            <th className="px-3 sm:px-6 py-3 text-slate-400 uppercase tracking-wider">
                               <div className="flex flex-col sm:flex-row items-end sm:items-center justify-center gap-2 sm:gap-4">
-                                <span className={canManage(activeSession) ? 'hidden md:inline' : ''}>{canManage(activeSession) ? 'Mark Attendance (Click Present to toggle)' : 'Status'}</span>
+                                <span className={canManage(activeSession) ? 'hidden md:inline' : ''}>{canManage(activeSession) ? 'Mark Attendance' : 'Status'}</span>
                                 {canManage(activeSession) && (
                                   <div className="flex items-center gap-2">
-                                    <button onClick={() => handleBulkMark('PRESENT')} disabled={bulkMarking} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100 transition-colors disabled:opacity-50">All Present</button>
-                                    <button onClick={() => handleBulkMark('ABSENT')} disabled={bulkMarking} className="px-2 py-1 bg-rose-50 text-rose-600 rounded hover:bg-rose-100 transition-colors disabled:opacity-50">All Absent</button>
+                                    <button
+                                      onClick={() => handleBulkMark('PRESENT')}
+                                      disabled={bulkMarking}
+                                      className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-400 border border-emerald-500/40 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
+                                    >
+                                      All Present
+                                    </button>
+                                    <button
+                                      onClick={() => handleBulkMark('ABSENT')}
+                                      disabled={bulkMarking}
+                                      className="px-2.5 py-1 bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 border border-rose-500/40 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
+                                    >
+                                      All Absent
+                                    </button>
                                   </div>
                                 )}
                               </div>
                             </th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-white/5">
                           {sessionMembersList.map(m => {
                             const status = m.status;
                             return (
-                              <tr key={m.id} className="hover:bg-slate-50/50">
+                              <tr key={m.id} className="hover:bg-purple-950/20 transition-colors">
                                 <td className="px-3 sm:px-6 py-3 sm:whitespace-nowrap">
-                                  <p className="font-medium text-slate-900">{m.name}</p>
-                                  <p className="text-xs text-slate-500">{m.rollNo || 'No Roll No'}<span className="sm:hidden"> · {m.role}</span></p>
+                                  <p className="font-semibold text-white">{m.name}</p>
+                                  <p className="text-xs text-slate-400 font-mono">{m.rollNo || 'No Roll No'}<span className="sm:hidden"> · {m.role}</span></p>
                                 </td>
                                 <td className="hidden sm:table-cell px-6 py-3 whitespace-nowrap">
-                                  <span className="text-xs font-medium px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg">{m.role}</span>
+                                  <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase tracking-wider ${ROLE_STYLE[m.role.toUpperCase()] || 'bg-[#1E1E2E] text-slate-300 border border-white/10'}`}>
+                                    {m.role}
+                                  </span>
                                 </td>
                                 <td className="px-3 sm:px-6 py-3 whitespace-nowrap">
                                   <div className="flex items-center justify-end sm:justify-center gap-1.5 sm:gap-2">
                                     {canManage(activeSession) ? (
                                       <>
-                                        <button 
+                                        <button
                                           onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
                                           disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                            status === 'PRESENT' 
-                                              ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
-                                              : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                                            status === 'PRESENT'
+                                              ? 'bg-emerald-600 text-white shadow-[0_0_12px_rgba(16,185,129,0.5)] border border-emerald-400'
+                                              : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 border border-white/10'
                                           }`}
                                         >
                                           <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Present</span>
                                         </button>
-                                        <button 
+                                        <button
                                           onClick={() => markMember(activeSession, m.id, 'ABSENT')}
                                           disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                            status === 'ABSENT' 
-                                              ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20' 
-                                              : 'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                                            status === 'ABSENT'
+                                              ? 'bg-rose-600 text-white shadow-[0_0_12px_rgba(244,63,94,0.5)] border border-rose-400'
+                                              : 'bg-white/5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-white/10'
                                           }`}
                                         >
                                           <X className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Absent</span>
                                         </button>
-                                        <button 
+                                        <button
                                           onClick={() => markMember(activeSession, m.id, 'INFORMED')}
                                           disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                            status === 'INFORMED' 
-                                              ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' 
-                                              : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                                            status === 'INFORMED'
+                                              ? 'bg-purple-600 text-white shadow-[0_0_12px_rgba(147,51,234,0.5)] border border-purple-400'
+                                              : 'bg-white/5 text-slate-400 hover:text-purple-300 hover:bg-purple-950/40 border border-white/10'
                                           }`}
                                         >
                                           <FileText className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Informed</span>
                                         </button>
                                       </>
                                     ) : (
-                                      <span className={`px-4 py-1.5 rounded-xl text-xs font-bold ${
-                                        status === 'PRESENT' ? 'bg-emerald-100 text-emerald-700' :
-                                        status === 'ABSENT' ? 'bg-rose-100 text-rose-700' :
-                                        'bg-blue-100 text-blue-700'
+                                      <span className={`px-3 py-1 rounded-sm text-xs font-bold font-mono uppercase ${
+                                        status === 'PRESENT' ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40' :
+                                        status === 'ABSENT' ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40' :
+                                        'bg-purple-950/60 text-purple-300 border border-purple-500/40'
                                       }`}>
                                         {status.charAt(0) + status.slice(1).toLowerCase()}
                                       </span>
@@ -1706,494 +2117,480 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           MEMBER ATTENDANCE HISTORY MODAL
          ══════════════════════════════════════════════ */}
       {historyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="rect-card-elevated max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Attendance History</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide">Attendance History</h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
                   Detailed session attendance record for member
                 </p>
               </div>
               <button
                 onClick={() => setHistoryModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 max-h-[75vh] overflow-y-auto">
+            <div className="p-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
               {historyLoading ? (
                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
-                  <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2" />
-                  <p className="text-xs">Loading attendance details...</p>
+                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-2 shadow-[0_0_12px_rgba(147,51,234,0.4)]" />
+                  <p className="text-xs font-mono text-purple-300">Loading attendance details...</p>
                 </div>
               ) : selectedMemberHistory ? (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   {/* Member Profile Card */}
-                  <div className="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div className="flex items-center gap-3 p-4 rounded-md rect-card bg-[#141024]/70">
                     <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                      className="w-10 h-10 rounded-md flex items-center justify-center text-white text-sm font-bold shrink-0"
                       style={{ background: avatarColor(selectedMemberHistory.member.name) }}
                     >
                       {selectedMemberHistory.member.name[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-900 truncate">
+                      <p className="text-sm font-bold text-white truncate">
                         {selectedMemberHistory.member.name}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`badge text-[10px] ${ROLE_STYLE[selectedMemberHistory.member.role] || ''}`}>
+                        <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold font-mono uppercase tracking-wider ${ROLE_STYLE[selectedMemberHistory.member.role] || ''}`}>
                           {selectedMemberHistory.member.role}
                         </span>
                         {selectedMemberHistory.member.rollNo && (
-                          <span className="text-[11px] font-mono text-slate-500">
+                          <span className="text-[11px] font-mono text-slate-400">
                             {selectedMemberHistory.member.rollNo}
                           </span>
                         )}
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-lg font-bold text-indigo-600">
+                      <span className="text-lg font-black font-mono text-purple-400">
                         {selectedMemberHistory.stats.presentPct}%
                       </span>
-                      <p className="text-[10px] text-slate-400">Overall Rate</p>
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Overall Rate</p>
                     </div>
                   </div>
 
                   {/* Detailed Member Info */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-white border border-slate-100 shadow-sm">
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Department</p>
-                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.department || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Year</p>
-                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.year || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Phone</p>
-                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.phone || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Team</p>
-                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.team || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Joined</p>
-                  <p className="text-xs font-semibold text-slate-700 mt-0.5">
-                    {selectedMemberHistory.member.createdAt
-                      ? new Date(selectedMemberHistory.member.createdAt).toLocaleDateString()
-                      : '—'}
-                  </p>
-                </div>
-              </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-md rect-card bg-[#0A0713]">
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Department</p>
+                      <p className="text-xs font-semibold text-slate-200 mt-0.5">{selectedMemberHistory.member.department || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Year</p>
+                      <p className="text-xs font-semibold text-slate-200 mt-0.5 font-mono">{selectedMemberHistory.member.year || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Phone</p>
+                      <p className="text-xs font-semibold text-slate-200 mt-0.5 font-mono">{selectedMemberHistory.member.phone || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Team</p>
+                      <p className="text-xs font-semibold text-purple-300 mt-0.5 font-mono">{selectedMemberHistory.member.team || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Joined</p>
+                      <p className="text-xs font-semibold text-slate-200 mt-0.5 font-mono">
+                        {selectedMemberHistory.member.createdAt
+                          ? new Date(selectedMemberHistory.member.createdAt).toLocaleDateString()
+                          : '—'}
+                      </p>
+                    </div>
+                  </div>
 
-              {/* Summary Metric Counters */}
-              <div className="grid grid-cols-4 gap-2 text-center">
-                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                  <div className="text-xs font-bold text-slate-700">
-                    {selectedMemberHistory.stats.total}
+                  {/* Summary Metric Counters */}
+                  <div className="grid grid-cols-4 gap-2 text-center font-mono">
+                    <div className="p-2.5 rounded-sm rect-card bg-white/[0.02]">
+                      <div className="text-xs font-bold text-slate-200">
+                        {selectedMemberHistory.stats.total}
+                      </div>
+                      <span className="text-[9px] text-slate-500 uppercase">Total</span>
+                    </div>
+                    <div className="p-2.5 rounded-sm bg-emerald-950/40 border border-emerald-500/30 text-emerald-400">
+                      <div className="text-xs font-bold">
+                        {selectedMemberHistory.stats.present}
+                      </div>
+                      <span className="text-[9px] uppercase">Present</span>
+                    </div>
+                    <div className="p-2.5 rounded-sm bg-rose-950/40 border border-rose-500/30 text-rose-400">
+                      <div className="text-xs font-bold">
+                        {selectedMemberHistory.stats.absent}
+                      </div>
+                      <span className="text-[9px] uppercase">Absent</span>
+                    </div>
+                    <div className="p-2.5 rounded-sm bg-purple-950/40 border border-purple-500/30 text-purple-300">
+                      <div className="text-xs font-bold">
+                        {selectedMemberHistory.stats.informed}
+                      </div>
+                      <span className="text-[9px] uppercase">Informed</span>
+                    </div>
                   </div>
-                  <span className="text-[10px] text-slate-400">Total</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
-                  <div className="text-xs font-bold text-emerald-700">
-                    {selectedMemberHistory.stats.present}
-                  </div>
-                  <span className="text-[10px] text-emerald-600">Present</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100">
-                  <div className="text-xs font-bold text-rose-700">
-                    {selectedMemberHistory.stats.absent}
-                  </div>
-                  <span className="text-[10px] text-rose-600">Absent</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-100">
-                  <div className="text-xs font-bold text-amber-700">
-                    {selectedMemberHistory.stats.informed}
-                  </div>
-                  <span className="text-[10px] text-amber-600">Informed</span>
-                </div>
-              </div>
 
-              {/* History Timeline List */}
-              <div>
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Meeting Logs
-                </h4>
-                {selectedMemberHistory.history.length === 0 ? (
-                  <p className="text-xs text-slate-400 py-6 text-center">
-                    No meeting attendance recorded for this member yet.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {selectedMemberHistory.history.map((h, i) => {
-                      const statusStyle = STATUS_STYLE[h.status] || STATUS_STYLE.UNMARKED;
-                      return (
-                        <div
-                          key={i}
-                          className="p-3 rounded-xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between text-xs"
-                        >
-                          <div>
-                            <p className="font-semibold text-slate-800">{h.title}</p>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                              {h.date} • Slot: {h.sessionSlot || 'FN'}
-                            </p>
-                          </div>
-                          <span className={`badge ${statusStyle.badge}`}>
-                            {statusStyle.label}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  {/* History Timeline List */}
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 font-mono">
+                      Meeting Logs
+                    </h4>
+                    {selectedMemberHistory.history.length === 0 ? (
+                      <p className="text-xs text-slate-500 font-mono py-6 text-center">
+                        No meeting attendance recorded for this member yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedMemberHistory.history.map((h, i) => {
+                          const statusStyle = STATUS_STYLE[h.status] || STATUS_STYLE.UNMARKED;
+                          return (
+                            <div
+                              key={i}
+                              className="p-3 rounded-md rect-card hover:border-purple-500/30 flex items-center justify-between text-xs"
+                            >
+                              <div>
+                                <p className="font-semibold text-white">{h.title}</p>
+                                <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                  {h.date} • Slot: {h.sessionSlot || 'FN'}
+                                </p>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase ${statusStyle.badge}`}>
+                                {statusStyle.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-            ) : (
-            <p className="text-xs text-slate-400 text-center py-6">
-              Unable to load attendance details for this member.
-            </p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 font-mono text-center py-6">
+                  Unable to load attendance details for this member.
+                </p>
               )}
-          </div>
+            </div>
 
-          {/* Modal Footer */}
-          <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 text-right">
-            <button
-              onClick={() => setHistoryModalOpen(false)}
-              className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
-            >
-              Close
-            </button>
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-white/10 bg-white/[0.02] text-right">
+              <button
+                onClick={() => setHistoryModalOpen(false)}
+                className="btn-rect-secondary px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
-        </div>
-  )
-}
+      )}
 
-{/* ══════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════
           EDIT MEMBER DETAILS MODAL
          ══════════════════════════════════════════════ */}
-{
-  editModalOpen && editingMember && (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 max-h-[90dvh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
-        {/* Modal Header */}
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Edit Member Details</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Update contact or academic info for {editingMember.name}
-            </p>
+      {editModalOpen && editingMember && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="rect-card-elevated max-w-md w-full max-h-[90dvh] overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide">Edit Member Details</h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  Update contact or academic info for {editingMember.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditModalOpen(false)}
+                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveMemberEdit} className="p-6 space-y-4">
+              {/* Member & Locked Team Info */}
+              <div className="p-3 bg-[#0A0713] rounded-md border border-white/10 flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-semibold text-white">{editingMember.name}</span>
+                  <span className={`ml-2 px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase ${ROLE_STYLE[editingMember.role] || ''}`}>
+                    {editingMember.role}
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-sm text-[10px] font-mono font-bold bg-purple-950/60 text-purple-300 border border-purple-500/30 uppercase">
+                  Team: {teamName}
+                </span>
+              </div>
+
+              {/* Status / Notice Messages */}
+              {editError && (
+                <div className="p-3 bg-amber-950/70 border border-amber-500/40 rounded-md text-xs text-amber-300 font-mono flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                  <span>{editError}</span>
+                </div>
+              )}
+              {editSuccess && (
+                <div className="p-3 bg-emerald-950/70 border border-emerald-500/40 rounded-md text-xs text-emerald-300 font-mono">
+                  {editSuccess}
+                </div>
+              )}
+
+              {/* Roll Number */}
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                  Roll Number
+                </label>
+                <input
+                  type="text"
+                  value={editForm.rollNo}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, rollNo: e.target.value }))}
+                  placeholder="e.g. 21B001"
+                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
+                />
+              </div>
+
+              {/* Department */}
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                  Department
+                </label>
+                <input
+                  type="text"
+                  value={editForm.department}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
+                  placeholder="e.g. Computer Science"
+                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
+                />
+              </div>
+
+              {/* Year */}
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                  Year of Study
+                </label>
+                <input
+                  type="text"
+                  value={editForm.year}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
+                  placeholder="e.g. 2 or 3"
+                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
+                />
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  placeholder="e.g. 9876543210"
+                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(false)}
+                  className="btn-rect-secondary px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="btn-purple-glow px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+                >
+                  {editSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
-          <button
-            onClick={() => setEditModalOpen(false)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
+      )}
 
-        {/* Modal Form */}
-        <form onSubmit={handleSaveMemberEdit} className="p-6 space-y-4">
-          {/* Member & Locked Team Info */}
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
-            <div>
-              <span className="font-semibold text-slate-800">{editingMember.name}</span>
-              <span className={`ml-2 badge ${ROLE_STYLE[editingMember.role] || ''}`}>
-                {editingMember.role}
-              </span>
-            </div>
-            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-              Team: {teamName} (Locked)
-            </span>
-          </div>
-
-          {/* Status / Notice Messages */}
-          {editError && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
-              <span>{editError}</span>
-            </div>
-          )}
-          {editSuccess && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
-              {editSuccess}
-            </div>
-          )}
-
-          {/* Roll Number */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-              Roll Number
-            </label>
-            <input
-              type="text"
-              value={editForm.rollNo}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, rollNo: e.target.value }))}
-              placeholder="e.g. 21B001"
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          {/* Department */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-              Department
-            </label>
-            <input
-              type="text"
-              value={editForm.department}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
-              placeholder="e.g. Computer Science"
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          {/* Year */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-              Year of Study
-            </label>
-            <input
-              type="text"
-              value={editForm.year}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
-              placeholder="e.g. 2 or 3"
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          {/* Phone */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-              Phone
-            </label>
-            <input
-              type="text"
-              value={editForm.phone}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
-              placeholder="e.g. 9876543210"
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          {/* Actions */}
-          <div className="pt-2 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setEditModalOpen(false)}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={editSaving}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-            >
-              {editSaving ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* ══════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════
           CREATE / EDIT MEETING MODAL
          ══════════════════════════════════════════════ */}
-{
-  meetingModalOpen && (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 max-h-[90dvh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">
-              {editingMeeting ? 'Edit Meeting' : 'New Meeting'}
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">For the {teamName} team</p>
-          </div>
-          <button
-            onClick={() => setMeetingModalOpen(false)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSaveMeeting} className="p-6 space-y-4">
-          {meetingError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{meetingError}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-              Title
-            </label>
-            <input
-              type="text"
-              required
-              maxLength={200}
-              value={meetingForm.title}
-              onChange={(e) => setMeetingForm((p) => ({ ...p, title: e.target.value }))}
-              placeholder={`e.g. ${teamName} weekly meeting`}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                Date
-              </label>
-              <input
-                type="date"
-                required
-                value={meetingForm.date}
-                onChange={(e) => setMeetingForm((p) => ({ ...p, date: e.target.value }))}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                Slot
-              </label>
-              <select
-                value={meetingForm.sessionSlot}
-                onChange={e => {
-                  const slot = e.target.value;
-                  let startTime = meetingForm.startTime;
-                  if (slot === 'FN') startTime = '09:00';
-                  else if (slot === 'AN') startTime = '13:00';
-                  else if (slot === 'EV') startTime = '17:00';
-                  setMeetingForm((p) => ({ ...p, sessionSlot: slot, startTime }));
-                }}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 cursor-pointer"
+      {meetingModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="rect-card-elevated max-w-md w-full max-h-[90dvh] overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide">
+                  {editingMeeting ? 'Edit Meeting' : 'New Meeting'}
+                </h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">For the {teamName} team</p>
+              </div>
+              <button
+                onClick={() => setMeetingModalOpen(false)}
+                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
               >
-                <option value="FN">FN (Morning)</option>
-                <option value="AN">AN (Afternoon)</option>
-                <option value="EV">EV (Evening)</option>
-              </select>
+                <X className="w-4 h-4" />
+              </button>
             </div>
+
+            <form onSubmit={handleSaveMeeting} className="p-6 space-y-4">
+              {meetingError && (
+                <div className="p-3 bg-rose-950/70 border border-rose-500/40 rounded-md text-xs text-rose-300 font-mono flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+                  <span>{meetingError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={200}
+                  value={meetingForm.title}
+                  onChange={(e) => setMeetingForm((p) => ({ ...p, title: e.target.value }))}
+                  placeholder={`e.g. ${teamName} weekly meeting`}
+                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={meetingForm.date}
+                    onChange={(e) => setMeetingForm((p) => ({ ...p, date: e.target.value }))}
+                    className="rect-input w-full px-3 py-2 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                    Slot
+                  </label>
+                  <select
+                    value={meetingForm.sessionSlot}
+                    onChange={e => {
+                      const slot = e.target.value;
+                      let startTime = meetingForm.startTime;
+                      if (slot === 'FN') startTime = '09:00';
+                      else if (slot === 'AN') startTime = '13:00';
+                      else if (slot === 'EV') startTime = '17:00';
+                      setMeetingForm((p) => ({ ...p, sessionSlot: slot, startTime }));
+                    }}
+                    className="rect-input w-full px-3 py-2 text-xs text-slate-200 bg-[#0A0713] cursor-pointer"
+                  >
+                    <option value="FN" className="bg-[#120F1D] text-slate-200">FN (Morning)</option>
+                    <option value="AN" className="bg-[#120F1D] text-slate-200">AN (Afternoon)</option>
+                    <option value="EV" className="bg-[#120F1D] text-slate-200">EV (Evening)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                    Start Time
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={meetingForm.startTime}
+                    onChange={(e) => setMeetingForm((p) => ({ ...p, startTime: e.target.value }))}
+                    className="rect-input w-full px-3 py-2 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                    End Time <span className="normal-case font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={meetingForm.endTime}
+                    onChange={(e) => setMeetingForm((p) => ({ ...p, endTime: e.target.value }))}
+                    className="rect-input w-full px-3 py-2 text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              {editingMeeting && (
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                    Notes <span className="normal-case font-normal">(optional)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    maxLength={1000}
+                    value={meetingForm.notes}
+                    onChange={(e) => setMeetingForm((p) => ({ ...p, notes: e.target.value }))}
+                    placeholder="Venue, agenda..."
+                    className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500 resize-none"
+                  />
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMeetingModalOpen(false)}
+                  className="btn-rect-secondary px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={meetingSaving}
+                  className="btn-purple-glow px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+                >
+                  {meetingSaving ? 'Saving...' : editingMeeting ? 'Save Changes' : 'Create Meeting'}
+                </button>
+              </div>
+            </form>
           </div>
+        </div>
+      )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                Start Time
-              </label>
-              <input
-                type="time"
-                required
-                value={meetingForm.startTime}
-                onChange={(e) => setMeetingForm((p) => ({ ...p, startTime: e.target.value }))}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                End Time <span className="normal-case font-normal">(optional)</span>
-              </label>
-              <input
-                type="time"
-                value={meetingForm.endTime}
-                onChange={(e) => setMeetingForm((p) => ({ ...p, endTime: e.target.value }))}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-          </div>
-          <p className="text-[11px] text-slate-400 -mt-2">
-            Slot is set from the start time: before 12:00 is FN, otherwise AN.
-          </p>
-
-          {editingMeeting && (
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                Notes <span className="normal-case font-normal">(optional)</span>
-              </label>
-              <textarea
-                rows={2}
-                maxLength={1000}
-                value={meetingForm.notes}
-                onChange={(e) => setMeetingForm((p) => ({ ...p, notes: e.target.value }))}
-                placeholder="Venue, agenda..."
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 resize-none"
-              />
-            </div>
-          )}
-
-          <div className="pt-2 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setMeetingModalOpen(false)}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={meetingSaving}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-            >
-              {meetingSaving ? 'Saving...' : editingMeeting ? 'Save Changes' : 'Create Meeting'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* ══════════════════════════════════════════════
-          CHANGE LOGIN MODAL
-         ══════════════════════════════════════════════ */}
-
-{/* ══════════════════════════════════════════════
+      {/* ══════════════════════════════════════════════
           DELETE MEETING CONFIRMATION
          ══════════════════════════════════════════════ */}
-{
-  deletingMeeting && (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-sm w-full shadow-xl border border-slate-200 p-6 animate-in fade-in zoom-in-95 duration-150">
-        <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
-          <Trash2 className="w-5 h-5" />
+      {deletingMeeting && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="rect-card-elevated border border-rose-500/30 max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-10 h-10 rounded-md bg-rose-950/60 border border-rose-500/40 text-rose-400 flex items-center justify-center mb-4">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-white uppercase tracking-wide">Delete this meeting?</h3>
+            <p className="text-xs text-slate-400 font-mono mt-1.5 leading-relaxed">
+              <span className="font-semibold text-rose-300">{deletingMeeting.title}</span> on {deletingMeeting.date}
+              {Object.keys(deletingMeeting.records || {}).length > 0 &&
+                ` and its ${Object.keys(deletingMeeting.records || {}).length} attendance mark(s)`}{' '}
+              will be permanently removed.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setDeletingMeeting(null)}
+                disabled={deleteBusy}
+                className="btn-rect-secondary px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteMeeting}
+                disabled={deleteBusy}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-md text-xs font-mono font-bold uppercase tracking-wider shadow-[0_0_15px_rgba(244,63,94,0.4)] disabled:opacity-50 cursor-pointer"
+              >
+                {deleteBusy ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
         </div>
-        <h3 className="text-base font-bold text-slate-900">Delete this meeting?</h3>
-        <p className="text-xs text-slate-500 mt-1.5">
-          <span className="font-semibold text-slate-700">{deletingMeeting.title}</span> on {deletingMeeting.date}
-          {Object.keys(deletingMeeting.records || {}).length > 0 &&
-            ` and its ${Object.keys(deletingMeeting.records || {}).length} attendance mark(s)`}{' '}
-          will be removed permanently.
-        </p>
-        <div className="mt-6 flex items-center justify-end gap-2">
-          <button
-            onClick={() => setDeletingMeeting(null)}
-            disabled={deleteBusy}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleDeleteMeeting}
-            disabled={deleteBusy}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-          >
-            {deleteBusy ? 'Deleting...' : 'Delete'}
-          </button>
-        </div>
-      </div>
+      )}
     </div>
-  )
-}
-    </div >
   );
 }

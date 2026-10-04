@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import type { User } from '../types';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Lock, User as UserIcon, Eye, EyeOff, Shield } from 'lucide-react';
+import { motion } from 'motion/react';
+import TopographyBackground from '../components/TopographyBackground';
 
 interface LoginPageProps {
   onLogin: (user: User) => void;
 }
 
-
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +24,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password })
+        body: JSON.stringify({ username: username.trim(), password }),
       });
 
       let data: any = null;
@@ -53,93 +55,147 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="min-h-dvh bg-slate-50 flex flex-col items-center justify-center px-4 py-8">
+    <div className="relative min-h-screen flex flex-col items-center justify-center px-4 py-12 select-none overflow-hidden bg-[#0B0813]">
+      {/* React Bits Living Topography Background */}
+      <TopographyBackground />
 
-      {/* Brand */}
-      <div className="flex flex-col items-center mb-6">
-        <img
-          src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
-          alt="PSG Tech Students Union Logo"
-          className="w-16 h-16 rounded-2xl object-cover mb-3 shadow-md"
-        />
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Students Union</h1>
-        <p className="text-xs text-slate-500 mt-1">Attendance Management Portal</p>
-      </div>
-
-      {/* Card */}
-      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-sm p-5 sm:p-7">
-        <h2 className="text-base font-semibold text-slate-800 mb-5">Sign in to continue</h2>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Username */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => { setUsername(e.target.value); setError(''); }}
-              required
-              placeholder="Enter your username"
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all"
-            />
-          </div>
-
-          {/* Password */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(''); }}
-              required
-              placeholder="Enter your password"
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all"
-            />
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="flex items-start gap-2.5 px-4 py-2.5 rounded-xl bg-red-50 border border-red-100">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 shrink-0" />
-              <p className="text-xs text-red-700">{error}</p>
+      {/* Main Container */}
+      <div className="relative z-10 w-full max-w-[420px] flex flex-col items-center">
+        {/* Brand Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="flex flex-col items-center mb-6 text-center"
+        >
+          <div className="relative mb-3">
+            <div className="w-16 h-16 rounded-lg p-0.5 bg-gradient-to-tr from-purple-600 via-pink-400 to-indigo-500 shadow-[0_0_30px_rgba(147,51,234,0.4)]">
+              <img
+                src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
+                alt="Students Union"
+                className="w-full h-full object-cover rounded-[6px]"
+              />
             </div>
-          )}
+            <span className="badge-reactbits-new absolute -top-2 -right-3">
+              ERM
+            </span>
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+            Students Union
+          </h1>
+          <p className="text-xs text-[#9490A6] mt-1 font-medium">
+            Attendance Tracking & Analytics System
+          </p>
+        </motion.div>
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-3 mt-1 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-60 cursor-pointer"
-            style={{
-              background: loading
-                ? '#94A3B8'
-                : 'linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 100%)',
-              boxShadow: loading ? 'none' : '0 4px 16px rgba(29,78,216,0.28)',
-            }}
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-                Signing in...
-              </span>
-            ) : (
-              <>Sign in <ArrowRight className="w-4 h-4" /></>
+        {/* Rectangular Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="w-full rect-card-elevated p-6 sm:p-8"
+        >
+          <div className="flex items-center justify-between pb-4 mb-5 border-b border-white/[0.08]">
+            <div>
+              <h2 className="text-base font-bold text-white tracking-tight">Portal Authentication</h2>
+              <p className="text-xs text-[#9490A6] mt-0.5">Enter your credentials to access</p>
+            </div>
+            <div className="w-8 h-8 rounded-md bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+              <Shield className="w-4 h-4" />
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Username Input */}
+            <div>
+              <label className="block text-[11px] font-semibold text-[#9490A6] uppercase tracking-wider mb-1.5">
+                Username or Email
+              </label>
+              <div className="relative">
+                <UserIcon className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setError('');
+                  }}
+                  required
+                  placeholder="admin or team name"
+                  className="rect-input w-full pl-9 pr-4 py-2.5 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Password Input */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] font-semibold text-[#9490A6] uppercase tracking-wider">
+                  Password
+                </label>
+              </div>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError('');
+                  }}
+                  required
+                  placeholder="Enter password"
+                  className="rect-input w-full pl-9 pr-10 py-2.5 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-md text-xs text-rose-300 flex items-center gap-2"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                <span>{error}</span>
+              </motion.div>
             )}
-          </button>
-        </form>
-      </div>
 
-      {/* Footer */}
-      <p className="mt-5 text-[11px] text-slate-400">
-        {new Date().getFullYear()} Students Union
-      </p>
+            {/* Submit Button (React Bits Glowing Purple) */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-purple-glow w-full flex items-center justify-center gap-2 py-2.5 mt-2 text-sm font-semibold cursor-pointer disabled:opacity-60"
+            >
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Authenticating...
+                </span>
+              ) : (
+                <>
+                  Sign In to Dashboard
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        </motion.div>
+
+        {/* Footer */}
+        <p className="mt-6 text-[11px] text-[#646079] tracking-wide">
+          © {new Date().getFullYear()} Students Union • PSG College of Technology
+        </p>
+      </div>
     </div>
   );
 }
