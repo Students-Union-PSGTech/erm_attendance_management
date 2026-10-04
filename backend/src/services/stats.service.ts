@@ -15,7 +15,12 @@ const pct = (n: number, d: number) => (d === 0 ? 0 : Math.round((n / d) * 1000) 
 
 function sessionFilter(team: Team | undefined, from?: string, to?: string) {
   const filter: Record<string, unknown> = {};
-  if (team) filter.team = { $in: [team, 'ALL'] };
+  if (team) {
+    filter.$or = [
+      { team: 'ALL' },
+      { team: { $regex: new RegExp(`(?:^|,)\\s*${team}\\s*(?:,|$)`, 'i') } }
+    ];
+  }
   if (from || to) filter.date = { ...(from && { $gte: from }), ...(to && { $lte: to }) };
   return filter;
 }

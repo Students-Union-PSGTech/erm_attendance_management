@@ -9,7 +9,6 @@ import {
   Grid3X3,
   RefreshCw,
   Search,
-  Download,
   X,
   UserCheck,
   UserX,
@@ -26,15 +25,21 @@ import {
   Check,
   FileText,
   RotateCcw,
-  KeyRound,
+  ArrowUp,
+  ArrowRight,
+  ChevronLeft,
+  ArrowDown,
+  ArrowUpDown,
+  Minus
 } from 'lucide-react';
+import ReportsView from './ReportsView';
 
 interface TeamDashboardProps {
   user: User;
   onLogout: () => void;
 }
 
-type NavKey = 'Overview' | 'Members' | 'Meetings' | 'Attendance' | 'Reports';
+type NavKey = 'Overview' | 'Members' | 'Attendance' | 'Reports';
 
 export interface Member {
   id: string;
@@ -113,7 +118,6 @@ export interface MemberHistoryDetail {
 const NAV: { icon: React.ElementType; label: NavKey }[] = [
   { icon: Grid3X3, label: 'Overview' },
   { icon: Users, label: 'Members' },
-  { icon: Calendar, label: 'Meetings' },
   { icon: UserCheck, label: 'Attendance' },
   { icon: BarChart2, label: 'Reports' },
 ];
@@ -153,6 +157,41 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   // Members View Filters & Search
   const [searchMemberQuery, setSearchMemberQuery] = useState('');
   const [filterRole, setFilterRole] = useState('ALL');
+  const [sortConfigs, setSortConfigs] = useState<{ key: keyof Member | 'presentPct'; direction: 'asc' | 'desc' }[]>([]);
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
+
+  const requestSort = (key: keyof Member | 'presentPct') => {
+    setSortConfigs(prev => {
+      const existingIndex = prev.findIndex(c => c.key === key);
+      let newConfigs = [...prev];
+      if (existingIndex === 0) {
+        newConfigs[0] = { ...newConfigs[0], direction: newConfigs[0].direction === 'asc' ? 'desc' : 'asc' };
+      } else {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (existingIndex > 0) {
+          direction = newConfigs[existingIndex].direction;
+          newConfigs.splice(existingIndex, 1);
+        }
+        newConfigs.unshift({ key, direction });
+      }
+      return newConfigs;
+    });
+  };
+
+  const SortIcon = ({ columnKey }: { columnKey: string }) => {
+    const sortIndex = sortConfigs.findIndex(c => c.key === columnKey);
+    if (sortIndex === -1) {
+      return <ArrowUpDown className="w-3 h-3 ml-1 opacity-40 group-hover:opacity-100 transition-opacity" />;
+    }
+    const config = sortConfigs[sortIndex];
+    return (
+      <div className="flex items-center ml-1">
+        {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />}
+        {sortIndex > 0 && <span className="text-[9px] font-bold text-indigo-600 ml-0.5">{sortIndex + 1}</span>}
+      </div>
+    );
+  };
+
 
   // Meetings View Filters
   const [searchMeetingQuery, setSearchMeetingQuery] = useState('');
@@ -180,15 +219,13 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
 
-  // CSV Export loading
-  const [exportingCsv, setExportingCsv] = useState(false);
-
   // Meeting create / edit modal (team logins manage their own team's meetings)
   const emptyMeetingForm = () => ({
     title: '',
     date: new Date().toISOString().slice(0, 10),
     startTime: '09:00',
     endTime: '',
+    sessionSlot: 'FN',
     notes: '',
   });
   const [meetingModalOpen, setMeetingModalOpen] = useState(false);
@@ -207,10 +244,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   // Change own login (username / password)
   const [loginName, setLoginName] = useState(user.username);
-  const [credModalOpen, setCredModalOpen] = useState(false);
-  const [credForm, setCredForm] = useState({ currentPassword: '', username: '', newPassword: '', confirmPassword: '' });
-  const [credSaving, setCredSaving] = useState(false);
-  const [credError, setCredError] = useState<string | null>(null);
 
   // Short-lived message for actions (marking, deleting...)
   const [actionMessage, setActionMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -235,6 +268,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const fetchData = async () => {
     setLoading(true);
     setError(null);
+    setSortConfigs([]);
     const token = localStorage.getItem('token');
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -266,9 +300,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           (s: AttendanceSession) => s.team === 'ALL' || s.team.split(',').map((t) => t.trim()).includes(teamName)
         );
         setSessions(teamSessions);
-        if (teamSessions.length > 0 && !selectedSessionId) {
-          setSelectedSessionId(teamSessions[0].id);
-        }
       }
 
       // Parse summary
@@ -334,6 +365,25 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     });
   }, [membersWithStats, filterRole, searchMemberQuery]);
 
+
+  const sortedMembers = useMemo(() => {
+    if (sortConfigs.length === 0) return filteredMembers;
+    return [...filteredMembers].sort((a, b) => {
+      for (const { key, direction } of sortConfigs) {
+        let aVal = a[key as keyof typeof a];
+        let bVal = b[key as keyof typeof b];
+        if (aVal == null) aVal = '';
+        if (bVal == null) bVal = '';
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+          aVal = aVal.toLowerCase();
+          bVal = bVal.toLowerCase();
+        }
+        if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [filteredMembers, sortConfigs]);
   // Filtered meetings for Meetings tab
   const filteredMeetings = useMemo(() => {
     return sessions.filter((s) => {
@@ -348,7 +398,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   // Selected session for Attendance tab
   const activeSession = useMemo(() => {
-    return sessions.find((s) => s.id === selectedSessionId) || sessions[0] || null;
+    return sessions.find((s) => s.id === selectedSessionId) || null;
   }, [sessions, selectedSessionId]);
 
   // Attendance breakdown for active session
@@ -380,7 +430,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     if (!activeSession) return [];
     const records = activeSession.records || {};
 
-    const list = members.map((m) => {
+    let targetMembers = [...members].sort((a, b) => {
+      const aMarked = !!records[a.id]?.status;
+      const bMarked = !!records[b.id]?.status;
+      if (aMarked !== bMarked) return aMarked ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const list = targetMembers.map((m) => {
       const rec = records[m.id];
       const status: 'PRESENT' | 'ABSENT' | 'INFORMED' | 'UNMARKED' = rec ? rec.status : 'UNMARKED';
       return {
@@ -459,7 +516,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       let resData: any = {};
       try {
         resData = text ? JSON.parse(text) : {};
-      } catch {}
+      } catch { }
 
       if (res.ok) {
         setEditSuccess('Member details updated successfully');
@@ -482,31 +539,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       setEditError(err.message || 'Network error updating member');
     } finally {
       setEditSaving(false);
-    }
-  };
-
-  // CSV Export Handler
-  const handleExportCsv = async () => {
-    setExportingCsv(true);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/members/export.csv', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to export CSV');
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `erm-${teamName.toLowerCase()}-members-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err: any) {
-      alert(`Export failed: ${err.message}`);
-    } finally {
-      setExportingCsv(false);
     }
   };
 
@@ -550,6 +582,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       date: s.date,
       startTime: s.startTime || '09:00',
       endTime: s.endTime || '',
+      sessionSlot: s.sessionSlot || 'FN',
       notes: s.notes || '',
     });
     setMeetingError(null);
@@ -570,6 +603,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       title: meetingForm.title.trim(),
       date: meetingForm.date,
       startTime: meetingForm.startTime,
+      sessionSlot: meetingForm.sessionSlot,
       notes: meetingForm.notes.trim(),
     };
     if (editingMeeting) {
@@ -678,63 +712,63 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     }
   };
 
-  /** Mark every team member who isn't marked yet. */
-  const markAllUnmarked = async (status: SessionRecord['status']) => {
+  const handleUpdateSessionRemarks = async (notes: string) => {
     if (!activeSession) return;
-    const targets = members.filter((m) => !activeSession.records?.[m.id]);
-    if (targets.length === 0) return;
-    setBulkMarking(true);
-    const results = await Promise.all(targets.map((m) => markMember(activeSession, m.id, status)));
-    setBulkMarking(false);
-    const ok = results.filter(Boolean).length;
-    if (ok) flash('success', `Marked ${ok} member${ok === 1 ? '' : 's'} ${status.toLowerCase()}`);
-  };
+    if (activeSession.notes === notes) return;
 
-  const openCredModal = () => {
-    setCredForm({ currentPassword: '', username: loginName, newPassword: '', confirmPassword: '' });
-    setCredError(null);
-    setCredModalOpen(true);
-  };
+    const previousSession = { ...activeSession };
+    setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, notes } : s));
 
-  const handleSaveCredentials = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const username = credForm.username.trim().toLowerCase();
-    const usernameChanged = username !== loginName;
-    if (!usernameChanged && !credForm.newPassword) {
-      setCredError('Enter a new username or a new password');
-      return;
-    }
-    if (credForm.newPassword && credForm.newPassword !== credForm.confirmPassword) {
-      setCredError('New passwords do not match');
-      return;
-    }
-
-    setCredSaving(true);
-    setCredError(null);
     try {
-      const res = await fetch('/api/auth/me/credentials', {
+      const res = await fetch(`/api/sessions/${activeSession.id}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
-        body: JSON.stringify({
-          currentPassword: credForm.currentPassword,
-          ...(usernameChanged && { username }),
-          ...(credForm.newPassword && { newPassword: credForm.newPassword }),
-        }),
+        body: JSON.stringify({ notes })
       });
-      const data = await readJson(res);
-      if (!res.ok) {
-        setCredError(errorText(data, res.status));
-        return;
-      }
-      // Old token no longer works; keep this session alive with the new one
-      localStorage.setItem('token', data.token);
-      setLoginName(data.user?.username ?? username);
-      setCredModalOpen(false);
-      flash('success', 'Login updated. Use the new details next time you sign in.');
+      if (!res.ok) throw new Error('Failed to update remarks');
+    } catch (err) {
+      console.error(err);
+      setSessions(prev => prev.map(s => s.id === activeSession.id ? previousSession : s));
+      flash('error', 'Could not update remarks');
+    }
+  };
+
+  /** Bulk mark all members in the current view. */
+  const handleBulkMark = async (status: SessionRecord['status']) => {
+    if (!activeSession) return;
+    const targets = sessionMembersList;
+    if (targets.length === 0) return;
+    
+    setBulkMarking(true);
+    
+    const now = new Date().toISOString();
+    const updatedRecords = { ...(activeSession.records || {}) };
+    targets.forEach(m => {
+      updatedRecords[m.id] = { status, markedAt: now };
+    });
+
+    const previousSession = { ...activeSession };
+    
+    // Optimistic UI update
+    setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, records: updatedRecords } : s));
+
+    try {
+      const res = await fetch(`/api/sessions/${activeSession.id}`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ records: updatedRecords })
+      });
+      
+      if (!res.ok) throw new Error(`Bulk mark failed (${res.status})`);
+      
+      flash('success', `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} ${status.toLowerCase()}`);
     } catch (err: any) {
-      setCredError(err.message || 'Network error');
+      console.error(err);
+      // Revert optimistic
+      setSessions(prev => prev.map(s => s.id === activeSession.id ? previousSession : s));
+      flash('error', err.message || 'Could not save bulk attendance');
     } finally {
-      setCredSaving(false);
+      setBulkMarking(false);
     }
   };
 
@@ -746,13 +780,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     return totalMarked > 0 ? Math.round((totalPresent / totalMarked) * 100) : 0;
   }, [attendanceStats]);
 
-  // Team Leaders card: every LEAD, then every CO-LEAD, each group A-Z
-  const teamLeaders = useMemo(() => {
-    const rank: Record<string, number> = { LEAD: 0, 'CO-LEAD': 1 };
-    return members
-      .filter((m) => m.role.toUpperCase() in rank)
-      .sort((a, b) => rank[a.role.toUpperCase()] - rank[b.role.toUpperCase()] || a.name.localeCompare(b.name));
-  }, [members]);
+
 
   // Leaders count (LEAD, CO-LEAD, COORDINATOR)
   const leaderCount = useMemo(() => {
@@ -771,9 +799,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-60 flex flex-col bg-white border-r border-slate-100 py-6 px-3 shrink-0 transform transition-transform duration-200 ease-in-out md:translate-x-0 ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed md:static inset-y-0 left-0 z-50 w-60 flex flex-col bg-white border-r border-slate-100 py-6 px-3 shrink-0 transform transition-transform duration-200 ease-in-out md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Brand */}
         <div className="flex items-center gap-2.5 px-3 mb-8">
@@ -831,19 +858,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={openCredModal}
-                title="Change username / password"
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-              </button>
-              <button
                 onClick={fetchData}
                 disabled={loading}
                 title="Refresh Data"
-                className={`p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer ${
-                  loading ? 'animate-spin opacity-50 cursor-not-allowed' : ''
-                }`}
+                className={`p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer ${loading ? 'animate-spin opacity-50 cursor-not-allowed' : ''
+                  }`}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
@@ -901,17 +920,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               </p>
             </div>
 
-            {/* Quick Export on Members or Reports */}
-            {(activeNav === 'Members' || activeNav === 'Reports') && (
-              <button
-                onClick={handleExportCsv}
-                disabled={exportingCsv || members.length === 0}
-                className="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-xs transition-all duration-150 disabled:opacity-50 cursor-pointer self-start sm:self-auto"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-500" />
-                {exportingCsv ? 'Exporting...' : 'Export Team CSV'}
-              </button>
-            )}
+
           </div>
 
           {/* Error Banner */}
@@ -933,11 +942,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           {/* Action feedback (marking, saving, deleting) */}
           {actionMessage && (
             <div
-              className={`mb-6 p-3.5 rounded-2xl border flex items-center justify-between text-sm ${
-                actionMessage.type === 'error'
+              className={`mb-6 p-3.5 rounded-2xl border flex items-center justify-between text-sm ${actionMessage.type === 'error'
                   ? 'bg-red-50 border-red-200 text-red-700'
                   : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-3">
                 {actionMessage.type === 'error' ? (
@@ -1045,169 +1053,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </div>
               </div>
 
-              {/* Two Column Layout: Recent Meetings & Role Distribution */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Recent Meetings Card */}
-                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
-                  <div className="flex items-center justify-between mb-5">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900">Recent Meetings</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Meetings and attendance sessions scheduled for {teamName}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setActiveNav('Meetings')}
-                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
-                    >
-                      View All <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {sessions.length === 0 ? (
-                    <div className="py-12 flex flex-col items-center justify-center text-center text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                      <Calendar className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
-                      <p className="text-sm font-semibold text-slate-600">No meetings scheduled for your team yet</p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Schedule one from the Meetings tab.
-                      </p>
-                      <button
-                        onClick={() => {
-                          setActiveNav('Meetings');
-                          openCreateMeeting();
-                        }}
-                        className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> New Meeting
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {sessions.slice(0, 5).map((s) => {
-                        const recordsCount = Object.keys(s.records || {}).length;
-                        return (
-                          <div
-                            key={s.id}
-                            className="py-3.5 flex items-center justify-between hover:bg-slate-50/70 rounded-xl px-3 transition-colors"
-                          >
-                            <div className="flex items-center gap-3.5 min-w-0">
-                              <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex flex-col items-center justify-center shrink-0 border border-indigo-100">
-                                <span className="text-[10px] font-bold uppercase leading-none">
-                                  {new Date(s.date).toLocaleDateString('en-US', { month: 'short' })}
-                                </span>
-                                <span className="text-sm font-bold leading-tight">
-                                  {new Date(s.date).getDate()}
-                                </span>
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-800 truncate">{s.title}</p>
-                                <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-slate-400" />
-                                    {s.startTime || '09:00'}
-                                    {s.endTime ? ` - ${s.endTime}` : ''}
-                                  </span>
-                                  <span>•</span>
-                                  <span className="font-medium text-slate-600">{s.sessionSlot || 'FN'}</span>
-                                  <span>•</span>
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
-                                    {s.team === 'ALL' ? 'Organization (ALL)' : s.team}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded-lg">
-                                {recordsCount} marked
-                              </span>
-                              <button
-                                onClick={() => {
-                                  setSelectedSessionId(s.id);
-                                  setActiveNav('Attendance');
-                                }}
-                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
-                              >
-                                Attendance
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Role Breakdown & Team Info */}
-                <div className="space-y-6">
-                  {/* Role Distribution Card */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
-                    <h3 className="text-base font-bold text-slate-900 mb-1">Role Composition</h3>
-                    <p className="text-xs text-slate-500 mb-4">{teamName} domain hierarchy</p>
-
-                    {members.length === 0 ? (
-                      <p className="text-xs text-slate-400 py-4 text-center">No members in your team yet</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map((role) => {
-                          const count = members.filter((m) => m.role.toUpperCase() === role).length;
-                          const pct = members.length > 0 ? Math.round((count / members.length) * 100) : 0;
-                          return (
-                            <div key={role}>
-                              <div className="flex items-center justify-between text-xs mb-1">
-                                <span className={`badge ${ROLE_STYLE[role] || 'bg-slate-100 text-slate-600'}`}>
-                                  {role}
-                                </span>
-                                <span className="font-semibold text-slate-700">
-                                  {count} <span className="font-normal text-slate-400">({pct}%)</span>
-                                </span>
-                              </div>
-                              <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                <div
-                                  className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
-                                  style={{ width: `${pct}%` }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Team Leads Roster Card */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
-                    <h3 className="text-base font-bold text-slate-900 mb-1">Team Leaders</h3>
-                    <p className="text-xs text-slate-500 mb-4">
-                      Leads & Co-leads ({teamLeaders.length})
-                    </p>
-
-                    {teamLeaders.length === 0 && (
-                      <p className="text-xs text-slate-400 py-2 text-center">No leads in your team yet</p>
-                    )}
-                    <div className="space-y-3">
-                      {teamLeaders.map((m) => (
-                          <div key={m.id} className="flex items-center gap-3">
-                            <div
-                              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
-                              style={{ background: avatarColor(m.name) }}
-                            >
-                              {m.name[0].toUpperCase()}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-semibold text-slate-800 truncate">{m.name}</p>
-                              <p className="text-[10px] text-slate-400 truncate">
-                                {m.department || 'PSG Tech'} {m.year ? `• ${m.year}` : ''}
-                              </p>
-                            </div>
-                            <span className={`badge text-[10px] ${ROLE_STYLE[m.role.toUpperCase()] || ''}`}>
-                              {m.role}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
@@ -1238,24 +1083,21 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   )}
                 </div>
 
-                {/* Role Filter Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-                  <span className="text-xs font-semibold text-slate-400 mr-1 flex items-center gap-1">
+                {/* Role Dropdown */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
                     <Filter className="w-3 h-3" /> Role:
                   </span>
-                  {['ALL', 'LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map((role) => (
-                    <button
-                      key={role}
-                      onClick={() => setFilterRole(role)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        filterRole === role
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {role}
-                    </button>
-                  ))}
+                  <select
+                    value={filterRole}
+                    onChange={(e) => setFilterRole(e.target.value)}
+                    className="pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all appearance-none cursor-pointer"
+                    style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px top 50%', backgroundSize: '8px auto' }}
+                  >
+                    {['ALL', 'LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(role => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1264,7 +1106,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-bold text-slate-900">
-                      {teamName} Roster ({filteredMembers.length})
+                      {teamName} Roster ({sortedMembers.length})
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Showing only members registered in your team
@@ -1297,64 +1139,105 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50/80 border-b border-slate-100 text-slate-500 uppercase tracking-wider font-semibold">
                         <tr>
-                          <th className="px-6 py-3.5">Member</th>
-                          <th className="px-6 py-3.5">Role</th>
-                          <th className="px-6 py-3.5">Roll Number</th>
-                          <th className="px-6 py-3.5">Department</th>
-                          <th className="px-6 py-3.5">Year</th>
-                          <th className="px-6 py-3.5">Phone</th>
-                          <th className="px-6 py-3.5">Attendance</th>
-                          <th className="px-6 py-3.5 text-right">Actions</th>
+                          {['Member', 'Role', 'Roll Number', 'Department', 'Year', 'Phone']
+                            .filter(header => !hiddenColumns.includes(header))
+                            .map((header) => {
+                              const keyMap: Record<string, string> = {
+                                'Member': 'name', 'Role': 'role', 'Roll Number': 'rollNo', 'Department': 'department', 'Year': 'year', 'Phone': 'phone'
+                              };
+                              const colKey = keyMap[header];
+                              return (
+                                <th
+                                  key={header}
+                                  className="px-6 py-3.5 group hover:bg-slate-100 transition-colors"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div
+                                      className="flex items-center cursor-pointer flex-1"
+                                      onClick={() => requestSort(colKey as any)}
+                                    >
+                                      {header}
+                                      <SortIcon columnKey={colKey} />
+                                    </div>
+                                    <button
+                                      onClick={() => setHiddenColumns(prev => [...prev, header])}
+                                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
+                                      title={`Hide ${header}`}
+                                    >
+                                      <Minus className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </th>
+                              );
+                            })}
+                          <th className="px-6 py-3.5 text-right w-24">
+                            {hiddenColumns.length > 0 ? (
+                              <div className="relative group inline-block text-left">
+                                <button className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Restore columns">
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                                <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 shadow-xl rounded-xl p-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1.5">Restore</div>
+                                  {hiddenColumns.map(col => (
+                                    <button
+                                      key={col}
+                                      onClick={() => setHiddenColumns(prev => prev.filter(c => c !== col))}
+                                      className="w-full text-left px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-indigo-600 rounded-lg flex items-center justify-between group/btn transition-colors cursor-pointer"
+                                    >
+                                      {col}
+                                      <Plus className="w-3 h-3 opacity-0 group-hover/btn:opacity-100" />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredMembers.map((m) => (
+                        {sortedMembers.map((m) => (
                           <tr key={m.id} className="hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-                                  style={{ background: avatarColor(m.name) }}
-                                >
-                                  {m.name[0].toUpperCase()}
-                                </div>
-                                <span className="font-semibold text-slate-900">{m.name}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-3.5">
-                              <span className={`badge ${ROLE_STYLE[m.role.toUpperCase()] || 'bg-slate-100 text-slate-600'}`}>
-                                {m.role}
-                              </span>
-                            </td>
-                            <td className="px-6 py-3.5 font-mono text-slate-600">
-                              {m.rollNo || <span className="text-slate-300">—</span>}
-                            </td>
-                            <td className="px-6 py-3.5 text-slate-600">
-                              {m.department || <span className="text-slate-300">—</span>}
-                            </td>
-                            <td className="px-6 py-3.5 text-slate-600">
-                              {m.year || <span className="text-slate-300">—</span>}
-                            </td>
-                            <td className="px-6 py-3.5 font-mono text-slate-600">
-                              {m.phone || <span className="text-slate-300">—</span>}
-                            </td>
-                            <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-slate-800">{m.presentPct}%</span>
-                                <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                            {!hiddenColumns.includes('Member') && (
+                              <td className="px-6 py-3.5">
+                                <div className="flex items-center gap-3">
                                   <div
-                                    className={`h-1.5 rounded-full ${
-                                      m.presentPct >= 75
-                                        ? 'bg-emerald-500'
-                                        : m.presentPct >= 50
-                                        ? 'bg-amber-500'
-                                        : 'bg-rose-500'
-                                    }`}
-                                    style={{ width: `${m.presentPct}%` }}
-                                  />
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+                                    style={{ background: avatarColor(m.name) }}
+                                  >
+                                    {m.name[0].toUpperCase()}
+                                  </div>
+                                  <span className="font-semibold text-slate-900">{m.name}</span>
                                 </div>
-                              </div>
-                            </td>
+                              </td>
+                            )}
+                            {!hiddenColumns.includes('Role') && (
+                              <td className="px-6 py-3.5">
+                                <span className={`badge ${ROLE_STYLE[m.role.toUpperCase()] || 'bg-slate-100 text-slate-600'}`}>
+                                  {m.role}
+                                </span>
+                              </td>
+                            )}
+                            {!hiddenColumns.includes('Roll Number') && (
+                              <td className="px-6 py-3.5 font-mono text-slate-600">
+                                {m.rollNo || <span className="text-slate-300">—</span>}
+                              </td>
+                            )}
+                            {!hiddenColumns.includes('Department') && (
+                              <td className="px-6 py-3.5 text-slate-600">
+                                {m.department || <span className="text-slate-300">—</span>}
+                              </td>
+                            )}
+                            {!hiddenColumns.includes('Year') && (
+                              <td className="px-6 py-3.5 text-slate-600">
+                                {m.year || <span className="text-slate-300">—</span>}
+                              </td>
+                            )}
+                            {!hiddenColumns.includes('Phone') && (
+                              <td className="px-6 py-3.5 font-mono text-slate-600">
+                                {m.phone || <span className="text-slate-300">—</span>}
+                              </td>
+                            )}
+
                             <td className="px-6 py-3.5 text-right">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
@@ -1384,263 +1267,180 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           )}
 
           {/* ══════════════════════════════════════════════
-              VIEW 3: MEETINGS
-             ══════════════════════════════════════════════ */}
-          {!loading && activeNav === 'Meetings' && (
-            <div className="space-y-5">
-              {/* Meeting Filters Card */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchMeetingQuery}
-                    onChange={(e) => setSearchMeetingQuery(e.target.value)}
-                    placeholder="Search meetings by title or date (YYYY-MM-DD)..."
-                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
-                  />
-                  {searchMeetingQuery && (
-                    <button
-                      onClick={() => setSearchMeetingQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-semibold text-slate-400 mr-1 flex items-center gap-1">
-                    <Filter className="w-3 h-3" /> Slot:
-                  </span>
-                  {['ALL', 'FN', 'AN'].map((slot) => (
-                    <button
-                      key={slot}
-                      onClick={() => setFilterMeetingSlot(slot)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        filterMeetingSlot === slot
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {slot === 'ALL' ? 'All Slots' : slot}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Meetings List */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      {teamName} Meetings & Sessions ({filteredMeetings.length})
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Your team's meetings, plus organization-wide (ALL) sessions run by the admin
-                    </p>
-                  </div>
-                  <button
-                    onClick={openCreateMeeting}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> New Meeting
-                  </button>
-                </div>
-
-                {filteredMeetings.length === 0 ? (
-                  <div className="py-16 text-center text-slate-400">
-                    <Calendar className="w-12 h-12 mx-auto mb-2 text-slate-300 stroke-1" />
-                    <p className="text-sm font-semibold text-slate-600">
-                      {sessions.length === 0 ? 'No meetings scheduled for your team.' : 'No meetings match the filter.'}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Click "New Meeting" to schedule one for {teamName}.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {filteredMeetings.map((s) => {
-                      const records = s.records || {};
-                      let present = 0;
-                      let absent = 0;
-                      let informed = 0;
-                      Object.values(records).forEach((r) => {
-                        if (r.status === 'PRESENT') present++;
-                        else if (r.status === 'ABSENT') absent++;
-                        else if (r.status === 'INFORMED') informed++;
-                      });
-                      const totalMarked = present + absent + informed;
-
-                      return (
-                        <div
-                          key={s.id}
-                          className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/60 transition-colors"
-                        >
-                          <div className="flex items-start gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700 flex flex-col items-center justify-center shrink-0">
-                              <span className="text-[10px] font-bold uppercase tracking-wider leading-none">
-                                {new Date(s.date).toLocaleDateString('en-US', { month: 'short' })}
-                              </span>
-                              <span className="text-base font-bold leading-tight">
-                                {new Date(s.date).getDate()}
-                              </span>
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="text-base font-bold text-slate-900">{s.title}</h4>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                    s.team === 'ALL'
-                                      ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                                      : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                  }`}
-                                >
-                                  {s.team === 'ALL' ? 'Organization (ALL)' : s.team}
-                                </span>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
-                                  {s.sessionSlot || 'FN'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
-                                <span className="flex items-center gap-1.5">
-                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                  {s.startTime || '09:00'}
-                                  {s.endTime ? ` - ${s.endTime}` : ''}
-                                </span>
-                                <span>•</span>
-                                <span>Date: {s.date}</span>
-                                {s.notes && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="italic text-slate-400 truncate max-w-xs">{s.notes}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-4 self-end sm:self-center">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-xs font-semibold">
-                                {present} Present
-                              </span>
-                              <span className="px-2 py-1 bg-rose-50 text-rose-700 border border-rose-100 rounded-lg text-xs font-semibold">
-                                {absent} Absent
-                              </span>
-                              <span className="px-2 py-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-lg text-xs font-semibold">
-                                {informed} Informed
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => {
-                                setSelectedSessionId(s.id);
-                                setActiveNav('Attendance');
-                              }}
-                              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                            >
-                              Mark Attendance
-                            </button>
-                            {canManage(s) ? (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => openEditMeeting(s)}
-                                  title="Edit meeting"
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
-                                >
-                                  <Edit3 className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => setDeletingMeeting(s)}
-                                  title="Delete meeting"
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            ) : (
-                              <span
-                                className="text-[10px] text-slate-400 w-[68px] text-center leading-tight"
-                                title="Organization-wide sessions are managed by the admin"
-                              >
-                                Managed by admin
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ══════════════════════════════════════════════
               VIEW 4: ATTENDANCE
              ══════════════════════════════════════════════ */}
           {!loading && activeNav === 'Attendance' && (
-            <div className="space-y-5">
-              {sessions.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
-                  <Calendar className="w-12 h-12 mx-auto mb-2 text-slate-300 stroke-1" />
-                  <p className="text-base font-bold text-slate-700">No attendance records available</p>
-                  <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                    There are no sessions for your team yet. Schedule a meeting, then mark attendance here.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setActiveNav('Meetings');
-                      openCreateMeeting();
-                    }}
-                    className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> New Meeting
-                  </button>
-                </div>
+            <div className="flex flex-col gap-4 h-full max-h-[calc(100vh-100px)] animate-in fade-in duration-500">
+              {!activeSession ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-bold text-slate-900">Recent Sessions</h2>
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="text" 
+                          placeholder="Search sessions..." 
+                          value={searchMeetingQuery}
+                          onChange={(e) => setSearchMeetingQuery(e.target.value)}
+                          className="w-64 pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
+                        />
+                        {searchMeetingQuery && (
+                          <button onClick={() => setSearchMeetingQuery('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      <button 
+                        onClick={openCreateMeeting}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors shadow-sm shadow-indigo-600/20 flex items-center gap-2 text-sm cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        New Session
+                      </button>
+                    </div>
+                  </div>
+
+                  {sessions.length === 0 ? (
+                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center flex-1 flex flex-col items-center justify-center">
+                      <div className="w-16 h-16 bg-indigo-50 text-indigo-500 rounded-2xl flex items-center justify-center mb-4 mx-auto">
+                        <Calendar className="w-8 h-8" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-900 mb-2">No Sessions Yet</h3>
+                      <p className="text-slate-500 max-w-sm mx-auto mb-6 text-sm">
+                        You haven't created any attendance sessions yet. Click "New Session" to start tracking.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {sessions.filter(s => {
+                        if (!searchMeetingQuery) return true;
+                        const q = searchMeetingQuery.toLowerCase();
+                        return s.title.toLowerCase().includes(q) || 
+                               s.team.toLowerCase().includes(q) || 
+                               s.date.includes(q) || 
+                               (s.sessionSlot || '').toLowerCase().includes(q);
+                      }).map(session => {
+                        const targetCount = members.filter(m => session.team.split(',').map(t=>t.trim()).includes(m.team)).length;
+                        const markedCount = session.records ? Object.keys(session.records).filter(id => members.some(m => m.id === id)).length : 0;
+                        const progress = targetCount === 0 ? 0 : Math.round((markedCount / targetCount) * 100);
+                        
+                        return (
+                          <div 
+                            key={session.id} 
+                            onClick={() => setSelectedSessionId(session.id)}
+                            className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer group"
+                          >
+                            <div className="flex items-start justify-between mb-4">
+                              <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold tracking-wider uppercase">
+                                    {session.team.split(',').join(', ')}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${
+                                    session.sessionSlot === 'FN' ? 'bg-amber-50 text-amber-600' :
+                                    session.sessionSlot === 'AN' ? 'bg-orange-50 text-orange-600' :
+                                    'bg-indigo-50 text-indigo-600'
+                                  }`}>
+                                    {session.sessionSlot || 'FN'}
+                                  </span>
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                                  {session.title}
+                                </h3>
+                              </div>
+                              <div className="bg-indigo-50 text-indigo-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                <ArrowRight className="w-4 h-4" />
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-6 text-sm text-slate-500 mb-4">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-4 h-4" />
+                                {session.date}
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="w-4 h-4" />
+                                {session.startTime} {session.endTime ? `- ${session.endTime}` : ''}
+                              </div>
+                            </div>
+                            
+                            {session.notes && (
+                              <p className="text-sm text-slate-600 mb-5 line-clamp-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                {session.notes}
+                              </p>
+                            )}
+                            
+                            <div>
+                              <div className="flex items-center justify-between text-xs mb-1.5">
+                                <span className="font-semibold text-slate-700">Attendance Progress</span>
+                                <span className="text-slate-500">{markedCount} / {targetCount} Marked</span>
+                              </div>
+                              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-1000 ${progress === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} 
+                                  style={{ width: `${progress}%` }} 
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
-                  {/* Session Selector & Metrics Header Card */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                {/* Detailed Session View Header */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setSelectedSessionId('')}
+                        className="p-2 -ml-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                          Select Meeting / Session
-                        </label>
-                        <select
-                          value={activeSession?.id || ''}
-                          onChange={(e) => setSelectedSessionId(e.target.value)}
-                          className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white"
-                        >
-                          {sessions.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.date} — {s.title} ({s.sessionSlot || 'FN'})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {activeSession && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-1">
+                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-[10px] font-bold tracking-wider uppercase">
+                            {activeSession.team.split(',').join(', ')}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {activeSession.date}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5" />
+                            {activeSession.startTime} {activeSession.endTime ? `- ${activeSession.endTime}` : ''}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-semibold text-slate-400 mr-1">Status:</span>
-                            {['ALL', 'PRESENT', 'ABSENT', 'INFORMED', 'UNMARKED'].map((status) => (
-                              <button
-                                key={status}
-                                onClick={() => setAttendanceStatusFilter(status)}
-                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                                  attendanceStatusFilter === status
-                                    ? 'bg-indigo-600 text-white shadow-xs'
-                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                }`}
-                              >
-                                {status}
-                              </button>
-                            ))}
+                          <h2 className="text-xl font-bold text-slate-900">{activeSession.title}</h2>
+                        </div>
+                      </div>
+                    </div>
+
+                    {canManage(activeSession) ? (
+                      <div className="mt-2 w-full lg:w-3/4">
+                        <textarea
+                          placeholder="Add session remarks here... (e.g. Special instructions, delays)"
+                          defaultValue={activeSession.notes}
+                          onBlur={(e) => handleUpdateSessionRemarks(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all resize-none h-[44px] focus:h-20"
+                        />
+                      </div>
+                    ) : (
+                      activeSession.notes && (
+                        <div className="flex items-center gap-2 mt-2 w-full lg:w-3/4">
+                          <div className="w-full text-sm text-slate-600 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm leading-relaxed whitespace-pre-wrap">
+                            <span className="font-bold text-slate-700 mr-2">Remarks:</span>
+                            {activeSession.notes}
                           </div>
                         </div>
-                      )}
-                    </div>
+                      )
+                    )}
+                  </div>
 
                     {/* Selected Session Stats Banner */}
                     {activeSession && (
@@ -1685,134 +1485,84 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   </div>
 
                   {/* Session Members Attendance Table */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-base font-bold text-slate-900">
-                          {teamName} Attendance: {activeSession?.title}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {sessionMembersList.length} of {members.length} members matching filter
-                        </p>
-                      </div>
-                      {activeSession && activeSessionStats.unmarked > 0 && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-400 hidden sm:inline">
-                            {activeSessionStats.unmarked} unmarked:
-                          </span>
-                          <button
-                            onClick={() => markAllUnmarked('PRESENT')}
-                            disabled={bulkMarking}
-                            className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
-                          >
-                            Mark all Present
-                          </button>
-                          <button
-                            onClick={() => markAllUnmarked('ABSENT')}
-                            disabled={bulkMarking}
-                            className="px-2.5 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
-                          >
-                            Mark all Absent
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50/80 border-b border-slate-100 text-slate-500 uppercase tracking-wider font-semibold">
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col min-h-0 mt-2">
+                    <div className="overflow-auto flex-1 p-0">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
                           <tr>
-                            <th className="px-6 py-3.5">Member</th>
-                            <th className="px-6 py-3.5">Role</th>
-                            <th className="px-6 py-3.5">Roll Number</th>
-                            <th className="px-6 py-3.5">Mark Attendance</th>
-                            <th className="px-6 py-3.5">Marked Time</th>
-                            <th className="px-6 py-3.5">Notes</th>
-                            <th className="px-6 py-3.5 text-right">History</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Member</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
+                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              <div className="flex items-center justify-center gap-4">
+                                <span>{canManage(activeSession) ? 'Mark Attendance' : 'Attendance Status'}</span>
+                                {canManage(activeSession) && (
+                                  <div className="flex items-center gap-2">
+                                    <button onClick={() => handleBulkMark('PRESENT')} disabled={bulkMarking} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100 transition-colors disabled:opacity-50">All Present</button>
+                                    <button onClick={() => handleBulkMark('ABSENT')} disabled={bulkMarking} className="px-2 py-1 bg-rose-50 text-rose-600 rounded hover:bg-rose-100 transition-colors disabled:opacity-50">All Absent</button>
+                                  </div>
+                                )}
+                              </div>
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {sessionMembersList.map((m) => {
-                            const statusInfo = STATUS_STYLE[m.status] || STATUS_STYLE.UNMARKED;
+                          {sessionMembersList.map(m => {
+                            const status = m.status;
                             return (
-                              <tr key={m.id} className="hover:bg-indigo-50/20 transition-colors">
-                                <td className="px-6 py-3.5">
-                                  <div className="flex items-center gap-3">
-                                    <div
-                                      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-                                      style={{ background: avatarColor(m.name) }}
-                                    >
-                                      {m.name[0].toUpperCase()}
-                                    </div>
-                                    <span className="font-semibold text-slate-900">{m.name}</span>
-                                  </div>
+                              <tr key={m.id} className="hover:bg-slate-50/50">
+                                <td className="px-6 py-3 whitespace-nowrap">
+                                  <p className="font-medium text-slate-900">{m.name}</p>
+                                  <p className="text-xs text-slate-500">{m.rollNo || 'No Roll No'}</p>
                                 </td>
-                                <td className="px-6 py-3.5">
-                                  <span className={`badge ${ROLE_STYLE[m.role.toUpperCase()] || 'bg-slate-100 text-slate-600'}`}>
-                                    {m.role}
-                                  </span>
+                                <td className="px-6 py-3 whitespace-nowrap">
+                                  <span className="text-xs font-medium px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg">{m.role}</span>
                                 </td>
-                                <td className="px-6 py-3.5 font-mono text-slate-600">
-                                  {m.rollNo || <span className="text-slate-300">—</span>}
-                                </td>
-                                <td className="px-6 py-3.5">
-                                  {activeSession && (
-                                    <div className="flex items-center gap-1.5">
-                                      {(
-                                        [
-                                          { status: 'PRESENT', label: 'Present', Icon: Check, on: 'bg-emerald-500 text-white', hover: 'hover:bg-emerald-50 hover:text-emerald-600' },
-                                          { status: 'ABSENT', label: 'Absent', Icon: X, on: 'bg-rose-500 text-white', hover: 'hover:bg-rose-50 hover:text-rose-600' },
-                                          { status: 'INFORMED', label: 'Informed', Icon: FileText, on: 'bg-amber-500 text-white', hover: 'hover:bg-amber-50 hover:text-amber-600' },
-                                        ] as const
-                                      ).map(({ status, label, Icon, on, hover }) => (
-                                        <button
-                                          key={status}
-                                          onClick={() => m.status !== status && markMember(activeSession, m.id, status)}
-                                          disabled={markingIds.has(m.id)}
-                                          title={`Mark ${label}`}
-                                          className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold transition-all disabled:opacity-60 cursor-pointer ${
-                                            m.status === status ? `${on} shadow-xs` : `bg-slate-100 text-slate-500 ${hover}`
+                                <td className="px-6 py-3 whitespace-nowrap">
+                                  <div className="flex items-center justify-center gap-2">
+                                    {canManage(activeSession) ? (
+                                      <>
+                                        <button 
+                                          onClick={() => markMember(activeSession, m.id, 'PRESENT')}
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                            status === 'PRESENT' 
+                                              ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
+                                              : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
                                           }`}
                                         >
-                                          <Icon className="w-3 h-3" />
-                                          <span className="hidden lg:inline">{label}</span>
+                                          <Check className="w-3.5 h-3.5" /> Present
                                         </button>
-                                      ))}
-                                      {m.status !== 'UNMARKED' && (
-                                        <button
-                                          onClick={() => markMember(activeSession, m.id, null)}
-                                          disabled={markingIds.has(m.id)}
-                                          title="Clear mark"
-                                          className="p-1 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 disabled:opacity-60 cursor-pointer"
+                                        <button 
+                                          onClick={() => markMember(activeSession, m.id, 'ABSENT')}
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                            status === 'ABSENT' 
+                                              ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20' 
+                                              : 'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
+                                          }`}
                                         >
-                                          <RotateCcw className="w-3 h-3" />
+                                          <X className="w-3.5 h-3.5" /> Absent
                                         </button>
-                                      )}
-                                      <span className={`sr-only`}>{statusInfo.label}</span>
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-6 py-3.5 text-slate-500">
-                                  {m.markedAt ? (
-                                    new Date(m.markedAt).toLocaleTimeString('en-IN', {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })
-                                  ) : (
-                                    <span className="text-slate-300">—</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-3.5 text-slate-500 italic">
-                                  {m.notes || <span className="text-slate-300 not-italic">—</span>}
-                                </td>
-                                <td className="px-6 py-3.5 text-right">
-                                  <button
-                                    onClick={() => handleOpenHistory(m)}
-                                    className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
-                                    title="View full history"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                  </button>
+                                        <button 
+                                          onClick={() => markMember(activeSession, m.id, 'INFORMED')}
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                            status === 'INFORMED' 
+                                              ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' 
+                                              : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'
+                                          }`}
+                                        >
+                                          <FileText className="w-3.5 h-3.5" /> Informed
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className={`px-4 py-1.5 rounded-xl text-xs font-bold ${
+                                        status === 'PRESENT' ? 'bg-emerald-100 text-emerald-700' :
+                                        status === 'ABSENT' ? 'bg-rose-100 text-rose-700' :
+                                        status === 'INFORMED' ? 'bg-blue-100 text-blue-700' :
+                                        'bg-slate-100 text-slate-500'
+                                      }`}>
+                                        {status === 'UNMARKED' ? 'Unmarked' : status.charAt(0) + status.slice(1).toLowerCase()}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1830,153 +1580,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               VIEW 5: REPORTS
              ══════════════════════════════════════════════ */}
           {!loading && activeNav === 'Reports' && (
-            <div className="space-y-6">
-              {/* Reports Stat Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="stat-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Overall Team Attendance
-                    </span>
-                    <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                      <UserCheck className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900">{overallTeamAttendancePct}%</div>
-                  <p className="text-[11px] text-slate-400 mt-1">Average across all members</p>
-                </div>
-
-                <div className="stat-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Total Tracked Sessions
-                    </span>
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                      <Calendar className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900">{sessions.length}</div>
-                  <p className="text-[11px] text-slate-400 mt-1">Completed team meetings</p>
-                </div>
-
-                <div className="stat-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                      Active Members
-                    </span>
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                      <Users className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900">{members.length}</div>
-                  <p className="text-[11px] text-slate-400 mt-1">On team roster</p>
-                </div>
-              </div>
-
-              {/* Cumulative Attendance Table */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">
-                      Member Attendance Summary
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Cumulative statistics calculated from all recorded sessions
-                    </p>
-                  </div>
-                </div>
-
-                {membersWithStats.length === 0 ? (
-                  <div className="py-16 text-center text-slate-400">
-                    <BarChart2 className="w-12 h-12 mx-auto mb-2 text-slate-300 stroke-1" />
-                    <p className="text-sm font-semibold text-slate-600">No attendance data to report</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50/80 border-b border-slate-100 text-slate-500 uppercase tracking-wider font-semibold">
-                        <tr>
-                          <th className="px-6 py-3.5">Member</th>
-                          <th className="px-6 py-3.5">Role</th>
-                          <th className="px-6 py-3.5 text-center">Total Sessions</th>
-                          <th className="px-6 py-3.5 text-center">Present</th>
-                          <th className="px-6 py-3.5 text-center">Absent</th>
-                          <th className="px-6 py-3.5 text-center">Informed</th>
-                          <th className="px-6 py-3.5">Attendance Rate</th>
-                          <th className="px-6 py-3.5 text-right">Details</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {membersWithStats.map((m) => (
-                          <tr key={m.id} className="hover:bg-indigo-50/20 transition-colors">
-                            <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-                                  style={{ background: avatarColor(m.name) }}
-                                >
-                                  {m.name[0].toUpperCase()}
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-slate-900">{m.name}</p>
-                                  {m.rollNo && (
-                                    <p className="text-[10px] text-slate-400 font-mono">{m.rollNo}</p>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-3.5">
-                              <span className={`badge ${ROLE_STYLE[m.role.toUpperCase()] || 'bg-slate-100 text-slate-600'}`}>
-                                {m.role}
-                              </span>
-                            </td>
-                            <td className="px-6 py-3.5 text-center font-semibold text-slate-700">
-                              {m.totalSessions}
-                            </td>
-                            <td className="px-6 py-3.5 text-center font-semibold text-emerald-600">
-                              {m.present}
-                            </td>
-                            <td className="px-6 py-3.5 text-center font-semibold text-rose-600">
-                              {m.absent}
-                            </td>
-                            <td className="px-6 py-3.5 text-center font-semibold text-amber-600">
-                              {m.informed}
-                            </td>
-                            <td className="px-6 py-3.5">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-slate-800 w-10">
-                                  {m.presentPct}%
-                                </span>
-                                <div className="w-20 bg-slate-100 h-2 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-2 rounded-full ${
-                                      m.presentPct >= 75
-                                        ? 'bg-emerald-500'
-                                        : m.presentPct >= 50
-                                        ? 'bg-amber-500'
-                                        : 'bg-rose-500'
-                                    }`}
-                                    style={{ width: `${m.presentPct}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-3.5 text-right">
-                              <button
-                                onClick={() => handleOpenHistory(m)}
-                                className="px-2.5 py-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                              >
-                                History
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
+            <ReportsView members={members as any} />
           )}
         </main>
       </div>
@@ -2043,484 +1647,436 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     </div>
                   </div>
 
-                  {/* Summary Metric Counters */}
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                      <div className="text-xs font-bold text-slate-700">
-                        {selectedMemberHistory.stats.total}
-                      </div>
-                      <span className="text-[10px] text-slate-400">Total</span>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
-                      <div className="text-xs font-bold text-emerald-700">
-                        {selectedMemberHistory.stats.present}
-                      </div>
-                      <span className="text-[10px] text-emerald-600">Present</span>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100">
-                      <div className="text-xs font-bold text-rose-700">
-                        {selectedMemberHistory.stats.absent}
-                      </div>
-                      <span className="text-[10px] text-rose-600">Absent</span>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-100">
-                      <div className="text-xs font-bold text-amber-700">
-                        {selectedMemberHistory.stats.informed}
-                      </div>
-                      <span className="text-[10px] text-amber-600">Informed</span>
-                    </div>
-                  </div>
-
-                  {/* History Timeline List */}
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                      Meeting Logs
-                    </h4>
-                    {selectedMemberHistory.history.length === 0 ? (
-                      <p className="text-xs text-slate-400 py-6 text-center">
-                        No meeting attendance recorded for this member yet.
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {selectedMemberHistory.history.map((h, i) => {
-                          const statusStyle = STATUS_STYLE[h.status] || STATUS_STYLE.UNMARKED;
-                          return (
-                            <div
-                              key={i}
-                              className="p-3 rounded-xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between text-xs"
-                            >
-                              <div>
-                                <p className="font-semibold text-slate-800">{h.title}</p>
-                                <p className="text-[11px] text-slate-400 mt-0.5">
-                                  {h.date} • Slot: {h.sessionSlot || 'FN'}
-                                </p>
-                              </div>
-                              <span className={`badge ${statusStyle.badge}`}>
-                                {statusStyle.label}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  {/* Detailed Member Info */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-white border border-slate-100 shadow-sm">
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Department</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.department || '—'}</p>
                 </div>
-              ) : (
-                <p className="text-xs text-slate-400 text-center py-6">
-                  Unable to load attendance details for this member.
-                </p>
-              )}
-            </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Year</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.year || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Phone</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.phone || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Team</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{selectedMemberHistory.member.team || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Joined</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">
+                    {selectedMemberHistory.member.createdAt
+                      ? new Date(selectedMemberHistory.member.createdAt).toLocaleDateString()
+                      : '—'}
+                  </p>
+                </div>
+              </div>
 
-            {/* Modal Footer */}
-            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 text-right">
-              <button
-                onClick={() => setHistoryModalOpen(false)}
-                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
-              >
-                Close
-              </button>
+              {/* Summary Metric Counters */}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="text-xs font-bold text-slate-700">
+                    {selectedMemberHistory.stats.total}
+                  </div>
+                  <span className="text-[10px] text-slate-400">Total</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+                  <div className="text-xs font-bold text-emerald-700">
+                    {selectedMemberHistory.stats.present}
+                  </div>
+                  <span className="text-[10px] text-emerald-600">Present</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100">
+                  <div className="text-xs font-bold text-rose-700">
+                    {selectedMemberHistory.stats.absent}
+                  </div>
+                  <span className="text-[10px] text-rose-600">Absent</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-100">
+                  <div className="text-xs font-bold text-amber-700">
+                    {selectedMemberHistory.stats.informed}
+                  </div>
+                  <span className="text-[10px] text-amber-600">Informed</span>
+                </div>
+              </div>
+
+              {/* History Timeline List */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Meeting Logs
+                </h4>
+                {selectedMemberHistory.history.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-6 text-center">
+                    No meeting attendance recorded for this member yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedMemberHistory.history.map((h, i) => {
+                      const statusStyle = STATUS_STYLE[h.status] || STATUS_STYLE.UNMARKED;
+                      return (
+                        <div
+                          key={i}
+                          className="p-3 rounded-xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <p className="font-semibold text-slate-800">{h.title}</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              {h.date} • Slot: {h.sessionSlot || 'FN'}
+                            </p>
+                          </div>
+                          <span className={`badge ${statusStyle.badge}`}>
+                            {statusStyle.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
+            ) : (
+            <p className="text-xs text-slate-400 text-center py-6">
+              Unable to load attendance details for this member.
+            </p>
+              )}
+          </div>
+
+          {/* Modal Footer */}
+          <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 text-right">
+            <button
+              onClick={() => setHistoryModalOpen(false)}
+              className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+            >
+              Close
+            </button>
           </div>
         </div>
-      )}
+        </div>
+  )
+}
 
-      {/* ══════════════════════════════════════════════
+{/* ══════════════════════════════════════════════
           EDIT MEMBER DETAILS MODAL
          ══════════════════════════════════════════════ */}
-      {editModalOpen && editingMember && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header */}
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Edit Member Details</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Update contact or academic info for {editingMember.name}
-                </p>
-              </div>
-              <button
-                onClick={() => setEditModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Form */}
-            <form onSubmit={handleSaveMemberEdit} className="p-6 space-y-4">
-              {/* Member & Locked Team Info */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
-                <div>
-                  <span className="font-semibold text-slate-800">{editingMember.name}</span>
-                  <span className={`ml-2 badge ${ROLE_STYLE[editingMember.role] || ''}`}>
-                    {editingMember.role}
-                  </span>
-                </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  Team: {teamName} (Locked)
-                </span>
-              </div>
-
-              {/* Status / Notice Messages */}
-              {editError && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
-                  <span>{editError}</span>
-                </div>
-              )}
-              {editSuccess && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
-                  {editSuccess}
-                </div>
-              )}
-
-              {/* Roll Number */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Roll Number
-                </label>
-                <input
-                  type="text"
-                  value={editForm.rollNo}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, rollNo: e.target.value }))}
-                  placeholder="e.g. 21B001"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              {/* Department */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Department
-                </label>
-                <input
-                  type="text"
-                  value={editForm.department}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
-                  placeholder="e.g. Computer Science"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              {/* Year */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Year of Study
-                </label>
-                <input
-                  type="text"
-                  value={editForm.year}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
-                  placeholder="e.g. 2 or 3"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              {/* Phone */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Phone
-                </label>
-                <input
-                  type="text"
-                  value={editForm.phone}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
-                  placeholder="e.g. 9876543210"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={editSaving}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-                >
-                  {editSaving ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
+{
+  editModalOpen && editingMember && (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Modal Header */}
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">Edit Member Details</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Update contact or academic info for {editingMember.name}
+            </p>
           </div>
+          <button
+            onClick={() => setEditModalOpen(false)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      )}
 
-      {/* ══════════════════════════════════════════════
+        {/* Modal Form */}
+        <form onSubmit={handleSaveMemberEdit} className="p-6 space-y-4">
+          {/* Member & Locked Team Info */}
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
+            <div>
+              <span className="font-semibold text-slate-800">{editingMember.name}</span>
+              <span className={`ml-2 badge ${ROLE_STYLE[editingMember.role] || ''}`}>
+                {editingMember.role}
+              </span>
+            </div>
+            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+              Team: {teamName} (Locked)
+            </span>
+          </div>
+
+          {/* Status / Notice Messages */}
+          {editError && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+              <span>{editError}</span>
+            </div>
+          )}
+          {editSuccess && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
+              {editSuccess}
+            </div>
+          )}
+
+          {/* Roll Number */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+              Roll Number
+            </label>
+            <input
+              type="text"
+              value={editForm.rollNo}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, rollNo: e.target.value }))}
+              placeholder="e.g. 21B001"
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          {/* Department */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+              Department
+            </label>
+            <input
+              type="text"
+              value={editForm.department}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
+              placeholder="e.g. Computer Science"
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          {/* Year */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+              Year of Study
+            </label>
+            <input
+              type="text"
+              value={editForm.year}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
+              placeholder="e.g. 2 or 3"
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          {/* Phone */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+              Phone
+            </label>
+            <input
+              type="text"
+              value={editForm.phone}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+              placeholder="e.g. 9876543210"
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="pt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditModalOpen(false)}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={editSaving}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+            >
+              {editSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+{/* ══════════════════════════════════════════════
           CREATE / EDIT MEETING MODAL
          ══════════════════════════════════════════════ */}
-      {meetingModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  {editingMeeting ? 'Edit Meeting' : 'New Meeting'}
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">For the {teamName} team</p>
-              </div>
-              <button
-                onClick={() => setMeetingModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveMeeting} className="p-6 space-y-4">
-              {meetingError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{meetingError}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={200}
-                  value={meetingForm.title}
-                  onChange={(e) => setMeetingForm((p) => ({ ...p, title: e.target.value }))}
-                  placeholder={`e.g. ${teamName} weekly meeting`}
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={meetingForm.date}
-                  onChange={(e) => setMeetingForm((p) => ({ ...p, date: e.target.value }))}
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={meetingForm.startTime}
-                    onChange={(e) => setMeetingForm((p) => ({ ...p, startTime: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                    End Time <span className="normal-case font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="time"
-                    value={meetingForm.endTime}
-                    onChange={(e) => setMeetingForm((p) => ({ ...p, endTime: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-400 -mt-2">
-                Slot is set from the start time: before 12:00 is FN, otherwise AN.
-              </p>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Notes <span className="normal-case font-normal">(optional)</span>
-                </label>
-                <textarea
-                  rows={2}
-                  maxLength={1000}
-                  value={meetingForm.notes}
-                  onChange={(e) => setMeetingForm((p) => ({ ...p, notes: e.target.value }))}
-                  placeholder="Venue, agenda..."
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 resize-none"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMeetingModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={meetingSaving}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-                >
-                  {meetingSaving ? 'Saving...' : editingMeeting ? 'Save Changes' : 'Create Meeting'}
-                </button>
-              </div>
-            </form>
+{
+  meetingModalOpen && (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">
+              {editingMeeting ? 'Edit Meeting' : 'New Meeting'}
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">For the {teamName} team</p>
           </div>
+          <button
+            onClick={() => setMeetingModalOpen(false)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      )}
 
-      {/* ══════════════════════════════════════════════
+        <form onSubmit={handleSaveMeeting} className="p-6 space-y-4">
+          {meetingError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{meetingError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+              Title
+            </label>
+            <input
+              type="text"
+              required
+              maxLength={200}
+              value={meetingForm.title}
+              onChange={(e) => setMeetingForm((p) => ({ ...p, title: e.target.value }))}
+              placeholder={`e.g. ${teamName} weekly meeting`}
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                Date
+              </label>
+              <input
+                type="date"
+                required
+                value={meetingForm.date}
+                onChange={(e) => setMeetingForm((p) => ({ ...p, date: e.target.value }))}
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                Slot
+              </label>
+              <select
+                value={meetingForm.sessionSlot}
+                onChange={e => {
+                  const slot = e.target.value;
+                  let startTime = meetingForm.startTime;
+                  if (slot === 'FN') startTime = '09:00';
+                  else if (slot === 'AN') startTime = '13:00';
+                  else if (slot === 'EV') startTime = '17:00';
+                  setMeetingForm((p) => ({ ...p, sessionSlot: slot, startTime }));
+                }}
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 cursor-pointer"
+              >
+                <option value="FN">FN (Morning)</option>
+                <option value="AN">AN (Afternoon)</option>
+                <option value="EV">EV (Evening)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                Start Time
+              </label>
+              <input
+                type="time"
+                required
+                value={meetingForm.startTime}
+                onChange={(e) => setMeetingForm((p) => ({ ...p, startTime: e.target.value }))}
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                End Time <span className="normal-case font-normal">(optional)</span>
+              </label>
+              <input
+                type="time"
+                value={meetingForm.endTime}
+                onChange={(e) => setMeetingForm((p) => ({ ...p, endTime: e.target.value }))}
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 -mt-2">
+            Slot is set from the start time: before 12:00 is FN, otherwise AN.
+          </p>
+
+          {editingMeeting && (
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                Notes <span className="normal-case font-normal">(optional)</span>
+              </label>
+              <textarea
+                rows={2}
+                maxLength={1000}
+                value={meetingForm.notes}
+                onChange={(e) => setMeetingForm((p) => ({ ...p, notes: e.target.value }))}
+                placeholder="Venue, agenda..."
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 resize-none"
+              />
+            </div>
+          )}
+
+          <div className="pt-2 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setMeetingModalOpen(false)}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={meetingSaving}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+            >
+              {meetingSaving ? 'Saving...' : editingMeeting ? 'Save Changes' : 'Create Meeting'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+{/* ══════════════════════════════════════════════
           CHANGE LOGIN MODAL
          ══════════════════════════════════════════════ */}
-      {credModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Change Login</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{teamName} team account</p>
-              </div>
-              <button
-                onClick={() => setCredModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <form onSubmit={handleSaveCredentials} className="p-6 space-y-4">
-              {credError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{credError}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Current Password
-                </label>
-                <input
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  value={credForm.currentPassword}
-                  onChange={(e) => setCredForm((p) => ({ ...p, currentPassword: e.target.value }))}
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                  Username
-                </label>
-                <input
-                  type="text"
-                  required
-                  minLength={3}
-                  maxLength={40}
-                  pattern="[A-Za-z0-9._\-]+"
-                  title="Letters, numbers, . _ - only"
-                  autoComplete="username"
-                  value={credForm.username}
-                  onChange={(e) => setCredForm((p) => ({ ...p, username: e.target.value }))}
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    minLength={6}
-                    autoComplete="new-password"
-                    placeholder="Leave blank to keep"
-                    value={credForm.newPassword}
-                    onChange={(e) => setCredForm((p) => ({ ...p, newPassword: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-                    Confirm
-                  </label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={credForm.confirmPassword}
-                    onChange={(e) => setCredForm((p) => ({ ...p, confirmPassword: e.target.value }))}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-              </div>
-              <p className="text-[11px] text-slate-400 -mt-2">
-                At least 6 characters. Other devices using this login will be signed out.
-              </p>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCredModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={credSaving}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-                >
-                  {credSaving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════
+{/* ══════════════════════════════════════════════
           DELETE MEETING CONFIRMATION
          ══════════════════════════════════════════════ */}
-      {deletingMeeting && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full shadow-xl border border-slate-200 p-6 animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
-              <Trash2 className="w-5 h-5" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900">Delete this meeting?</h3>
-            <p className="text-xs text-slate-500 mt-1.5">
-              <span className="font-semibold text-slate-700">{deletingMeeting.title}</span> on {deletingMeeting.date}
-              {Object.keys(deletingMeeting.records || {}).length > 0 &&
-                ` and its ${Object.keys(deletingMeeting.records || {}).length} attendance mark(s)`}{' '}
-              will be removed permanently.
-            </p>
-            <div className="mt-6 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setDeletingMeeting(null)}
-                disabled={deleteBusy}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteMeeting}
-                disabled={deleteBusy}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-              >
-                {deleteBusy ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
+{
+  deletingMeeting && (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl max-w-sm w-full shadow-xl border border-slate-200 p-6 animate-in fade-in zoom-in-95 duration-150">
+        <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
+          <Trash2 className="w-5 h-5" />
         </div>
-      )}
+        <h3 className="text-base font-bold text-slate-900">Delete this meeting?</h3>
+        <p className="text-xs text-slate-500 mt-1.5">
+          <span className="font-semibold text-slate-700">{deletingMeeting.title}</span> on {deletingMeeting.date}
+          {Object.keys(deletingMeeting.records || {}).length > 0 &&
+            ` and its ${Object.keys(deletingMeeting.records || {}).length} attendance mark(s)`}{' '}
+          will be removed permanently.
+        </p>
+        <div className="mt-6 flex items-center justify-end gap-2">
+          <button
+            onClick={() => setDeletingMeeting(null)}
+            disabled={deleteBusy}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDeleteMeeting}
+            disabled={deleteBusy}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+          >
+            {deleteBusy ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
+      </div>
     </div>
+  )
+}
+    </div >
   );
 }

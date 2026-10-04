@@ -4,10 +4,11 @@ import {
   Users, Calendar, BarChart2, Settings,
   TrendingUp, UserCheck, UserX, Activity,
   LogOut, Grid3X3, ArrowUpDown, ArrowDown, ArrowUp, RefreshCw,
-  Search, Filter, X, Minus, Plus, Check
+  Search, Filter, X, Minus, Plus, Check, Edit3, Eye
 } from 'lucide-react';
 import AttendanceView from './AttendanceView';
 import ReportsView from './ReportsView';
+import type { MemberHistoryDetail } from './TeamDashboard';
 
 interface AdminDashboardProps {
   user: User;
@@ -59,9 +60,16 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   // Track hidden columns instead of archived rows
   const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   
-  // Inline editing state
-  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  // Edit Member Modal State
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [editForm, setEditForm] = useState<Partial<Member>>({});
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSuccess, setEditSuccess] = useState<string | null>(null);
+  const [viewingMember, setViewingMember] = useState<Member | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedMemberHistory, setSelectedMemberHistory] = useState<MemberHistoryDetail | null>(null);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -87,8 +95,50 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     }
   };
 
-  const handleSaveEdit = async () => {
-    if (!editingMemberId) return;
+  const handleOpenHistory = async (member: Member) => {
+    setViewingMember(member);
+    setHistoryLoading(true);
+    setSelectedMemberHistory(null);
+    try {
+      const res = await fetch(`/api/members/${member.id}/attendance`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : null;
+        setSelectedMemberHistory(data);
+      }
+    } catch (err) {
+      console.error('Failed to load member history:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleOpenEdit = (member: Member) => {
+    setEditingMember(member);
+    setEditForm({
+      name: member.name,
+      team: member.team,
+      role: member.role,
+      rollNo: member.rollNo || '',
+      department: member.department || '',
+      year: member.year || '',
+      phone: member.phone || '',
+    });
+    setEditError(null);
+    setEditSuccess(null);
+    setEditModalOpen(true);
+  };
+
+  const handleSaveMemberEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    
+    setEditSaving(true);
+    setEditError(null);
+    setEditSuccess(null);
+    
     try {
       const payload = { ...editForm };
       // Backend expects omitted or undefined for empty strings, but we handle empty to undefined
@@ -97,8 +147,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       if (payload.year === '') delete payload.year;
       if (payload.phone === '') delete payload.phone;
 
-      const res = await fetch(`/api/members/${editingMemberId}`, {
-        method: 'PUT', // standard REST update
+      const res = await fetch(`/api/members/${editingMember.id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`
@@ -106,14 +156,18 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        setMembers(prev => prev.map(m => m.id === editingMemberId ? { ...m, ...payload } : m));
-        setEditingMemberId(null);
+        setMembers(prev => prev.map(m => m.id === editingMember.id ? { ...m, ...payload } : m));
+        setEditSuccess('Member updated successfully!');
+        setTimeout(() => setEditModalOpen(false), 1500);
       } else {
         const errData = await res.json();
-        console.error('Failed to update member:', errData);
+        setEditError(errData.error || 'Failed to update member');
       }
     } catch (err) {
       console.error('Network error updating member', err);
+      setEditError('Network error updating member');
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -457,95 +511,69 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
                       {sortedMembers.map((m) => {
-                        const isEditing = editingMemberId === m.id;
                         return (
                           <tr 
                             key={m.id} 
-                            className={`transition-colors ${isEditing ? 'bg-blue-50/30' : 'hover:bg-slate-50 cursor-pointer'}`}
-                            onClick={(e) => {
-                              if (!isEditing && (e.target as HTMLElement).closest('td')) {
-                                setEditingMemberId(m.id);
-                                setEditForm(m);
-                              }
-                            }}
+                            className="transition-colors hover:bg-slate-50"
                           >
                             {!hiddenColumns.includes('Name') && (
                               <td className="px-6 py-3 whitespace-nowrap">
-                                {isEditing ? (
-                                  <input autoFocus value={editForm.name || ''} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full px-2 py-1 bg-white border border-blue-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="Name" />
-                                ) : (
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ background: avatarColor(m.name) }}>
-                                      {m.name.charAt(0)}
-                                    </div>
-                                    <span className="font-medium text-slate-900">{m.name}</span>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style={{ background: avatarColor(m.name) }}>
+                                    {m.name.charAt(0)}
                                   </div>
-                                )}
+                                  <span className="font-medium text-slate-900">{m.name}</span>
+                                </div>
                               </td>
                             )}
                             {!hiddenColumns.includes('Team') && (
                               <td className="px-6 py-3 whitespace-nowrap font-medium text-slate-700">
-                                {isEditing ? (
-                                  <select value={editForm.team || ''} onChange={e => setEditForm({ ...editForm, team: e.target.value })} className="w-full px-2 py-1 bg-white border border-blue-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-100">
-                                    {['MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN'].map(t => <option key={t} value={t}>{t}</option>)}
-                                  </select>
-                                ) : m.team}
+                                {m.team}
                               </td>
                             )}
-                            {!hiddenColumns.includes('Role') && (
-                              <td className="px-6 py-3 whitespace-nowrap">
-                                {isEditing ? (
-                                  <select value={editForm.role || ''} onChange={e => setEditForm({ ...editForm, role: e.target.value })} className="w-full px-2 py-1 bg-white border border-blue-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-100">
-                                    {['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(r => <option key={r} value={r}>{r}</option>)}
-                                  </select>
-                                ) : (
-                                  <span className={`badge ${ROLE_STYLE[m.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{m.role}</span>
-                                )}
-                              </td>
-                            )}
-                            {!hiddenColumns.includes('Roll No') && (
-                              <td className="px-6 py-3 whitespace-nowrap text-slate-500 font-mono text-xs">
-                                {isEditing ? (
-                                  <input value={editForm.rollNo || ''} onChange={e => setEditForm({ ...editForm, rollNo: e.target.value })} className="w-24 px-2 py-1 bg-white border border-blue-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="Roll No" />
-                                ) : (m.rollNo || '-')}
-                              </td>
-                            )}
-                            {!hiddenColumns.includes('Department') && (
-                              <td className="px-6 py-3 whitespace-nowrap text-slate-500">
-                                {isEditing ? (
-                                  <input value={editForm.department || ''} onChange={e => setEditForm({ ...editForm, department: e.target.value })} className="w-32 px-2 py-1 bg-white border border-blue-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="Dept" />
-                                ) : (m.department || '-')}
-                              </td>
-                            )}
-                            {!hiddenColumns.includes('Year') && (
-                              <td className="px-6 py-3 whitespace-nowrap text-slate-500">
-                                {isEditing ? (
-                                  <select value={editForm.year || ''} onChange={e => setEditForm({ ...editForm, year: e.target.value })} className="w-full px-2 py-1 bg-white border border-blue-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-100">
-                                    <option value="">None</option>
-                                    {['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'].map(y => <option key={y} value={y}>{y}</option>)}
-                                  </select>
-                                ) : (m.year || '-')}
-                              </td>
-                            )}
-                            {!hiddenColumns.includes('Phone') && (
-                              <td className="px-6 py-3 whitespace-nowrap text-slate-500 font-mono text-xs">
-                                {isEditing ? (
-                                  <input value={editForm.phone || ''} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} className="w-28 px-2 py-1 bg-white border border-blue-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="Phone" />
-                                ) : (m.phone || '-')}
-                              </td>
-                            )}
-                            <td className="px-4 py-3 whitespace-nowrap text-right">
-                              {isEditing && (
-                                <div className="flex items-center justify-end gap-2">
-                                  <button onClick={(e) => { e.stopPropagation(); setEditingMemberId(null); }} className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded" title="Cancel">
-                                    <X className="w-4 h-4"/>
-                                  </button>
-                                  <button onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }} className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded" title="Save">
-                                    <Check className="w-4 h-4"/>
-                                  </button>
-                                </div>
-                              )}
+                          {!hiddenColumns.includes('Role') && (
+                            <td className="px-6 py-3 whitespace-nowrap">
+                              <span className={`badge ${ROLE_STYLE[m.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{m.role}</span>
                             </td>
+                          )}
+                          {!hiddenColumns.includes('Roll No') && (
+                            <td className="px-6 py-3 whitespace-nowrap text-slate-500 font-mono text-xs">
+                              {m.rollNo || '-'}
+                            </td>
+                          )}
+                          {!hiddenColumns.includes('Department') && (
+                            <td className="px-6 py-3 whitespace-nowrap text-slate-500">
+                              {m.department || '-'}
+                            </td>
+                          )}
+                          {!hiddenColumns.includes('Year') && (
+                            <td className="px-6 py-3 whitespace-nowrap text-slate-500">
+                              {m.year || '-'}
+                            </td>
+                          )}
+                          {!hiddenColumns.includes('Phone') && (
+                            <td className="px-6 py-3 whitespace-nowrap text-slate-500 font-mono text-xs">
+                              {m.phone || '-'}
+                            </td>
+                          )}
+                          <td className="px-4 py-3 whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => handleOpenHistory(m)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                title="View details"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleOpenEdit(m)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                title="Edit member"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
                           </tr>
                         );
                       })}
@@ -572,6 +600,307 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           )}
         </main>
       </div>
+
+      {/* View Member / Attendance History Modal */}
+      {viewingMember && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Attendance History</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Detailed session attendance record for member</p>
+              </div>
+              <button
+                onClick={() => { setViewingMember(null); setSelectedMemberHistory(null); }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 max-h-[75vh] overflow-y-auto space-y-5">
+              {/* Member Profile Card */}
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                  style={{ background: avatarColor(viewingMember.name) }}
+                >
+                  {viewingMember.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-slate-900 truncate">{viewingMember.name}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className={`badge text-[10px] ${ROLE_STYLE[viewingMember.role] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                      {viewingMember.role}
+                    </span>
+                    {viewingMember.rollNo && (
+                      <span className="text-[11px] font-mono text-slate-500">{viewingMember.rollNo}</span>
+                    )}
+                  </div>
+                </div>
+                {selectedMemberHistory && (
+                  <div className="text-right">
+                    <span className="text-lg font-bold text-indigo-600">{selectedMemberHistory.stats.presentPct}%</span>
+                    <p className="text-[10px] text-slate-400">Overall Rate</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Detail Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-xl bg-white border border-slate-100">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Department</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{viewingMember.department || '—'}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-white border border-slate-100">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Year</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{viewingMember.year || '—'}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-white border border-slate-100">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Phone</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5 font-mono">{viewingMember.phone || '—'}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-white border border-slate-100">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Team</p>
+                  <p className="text-xs font-semibold text-slate-700 mt-0.5">{viewingMember.team}</p>
+                </div>
+              </div>
+
+              {/* Attendance Stats or Loader */}
+              {historyLoading ? (
+                <div className="py-8 flex flex-col items-center justify-center text-slate-400">
+                  <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2" />
+                  <p className="text-xs">Loading attendance details...</p>
+                </div>
+              ) : selectedMemberHistory ? (
+                <>
+                  {/* Summary Counters */}
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="text-xs font-bold text-slate-700">{selectedMemberHistory.stats.total}</div>
+                      <span className="text-[10px] text-slate-400">Total</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+                      <div className="text-xs font-bold text-emerald-700">{selectedMemberHistory.stats.present}</div>
+                      <span className="text-[10px] text-emerald-600">Present</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100">
+                      <div className="text-xs font-bold text-rose-700">{selectedMemberHistory.stats.absent}</div>
+                      <span className="text-[10px] text-rose-600">Absent</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-100">
+                      <div className="text-xs font-bold text-amber-700">{selectedMemberHistory.stats.informed}</div>
+                      <span className="text-[10px] text-amber-600">Informed</span>
+                    </div>
+                  </div>
+
+                  {/* Meeting Logs */}
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Meeting Logs</h4>
+                    {selectedMemberHistory.history.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-6 text-center">No meeting attendance recorded yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedMemberHistory.history.map((h, i) => {
+                          const STATUS_STYLE: Record<string, { badge: string; label: string }> = {
+                            PRESENT: { badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'Present' },
+                            ABSENT: { badge: 'bg-rose-50 text-rose-700 border border-rose-200', label: 'Absent' },
+                            INFORMED: { badge: 'bg-amber-50 text-amber-700 border border-amber-200', label: 'Informed' },
+                            UNMARKED: { badge: 'bg-slate-50 text-slate-500 border border-slate-200', label: 'Unmarked' },
+                          };
+                          const statusStyle = STATUS_STYLE[h.status] || STATUS_STYLE.UNMARKED;
+                          return (
+                            <div key={i} className="p-3 rounded-xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between text-xs">
+                              <div>
+                                <p className="font-semibold text-slate-800">{h.title}</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">{h.date} • Slot: {h.sessionSlot || 'FN'}</p>
+                              </div>
+                              <span className={`badge ${statusStyle.badge}`}>{statusStyle.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-slate-400 text-center py-4">Could not load attendance data.</p>
+              )}
+
+              {/* Edit shortcut */}
+              <button
+                onClick={() => { handleOpenEdit(viewingMember); setViewingMember(null); setSelectedMemberHistory(null); }}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Edit Member
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 text-right">
+              <button
+                onClick={() => { setViewingMember(null); setSelectedMemberHistory(null); }}
+                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+        </div>
+      </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
+                EDIT MEMBER DETAILS MODAL
+               ══════════════════════════════════════════════ */}
+      {editModalOpen && editingMember && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Edit Member Details</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update info for {editingMember.name}
+                </p>
+              </div>
+              <button
+                onClick={() => setEditModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveMemberEdit} className="p-6 space-y-4">
+              {/* Member Info */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col gap-2 text-xs">
+                <div>
+                  <span className="font-semibold text-slate-800 mr-2">Name:</span>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 mt-1"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="font-semibold text-slate-800">Team:</span>
+                    <select
+                      value={editForm.team}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, team: e.target.value }))}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs outline-none focus:border-indigo-500 mt-1"
+                    >
+                      {['MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN', 'ALL'].map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-800">Role:</span>
+                    <select
+                      value={editForm.role}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
+                      className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs outline-none focus:border-indigo-500 mt-1"
+                    >
+                      {['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status / Notice Messages */}
+              {editError && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+                  <span>{editError}</span>
+                </div>
+              )}
+              {editSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800">
+                  {editSuccess}
+                </div>
+              )}
+
+              {/* Roll Number */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Roll Number
+                </label>
+                <input
+                  type="text"
+                  value={editForm.rollNo}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, rollNo: e.target.value }))}
+                  placeholder="e.g. 21B001"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {/* Department */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Department
+                </label>
+                <input
+                  type="text"
+                  value={editForm.department}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
+                  placeholder="e.g. Computer Science"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {/* Year */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Year of Study
+                </label>
+                <input
+                  type="text"
+                  value={editForm.year}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
+                  placeholder="e.g. 2 or 3"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                  placeholder="e.g. 9876543210"
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {editSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

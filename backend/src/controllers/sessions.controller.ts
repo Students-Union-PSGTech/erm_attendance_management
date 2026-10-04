@@ -105,8 +105,12 @@ export async function querySessions(req: Request) {
   const scope = resolveTeamScope(req);
 
   const filter: Record<string, unknown> = {};
-  if (user.role === 'team') filter.team = { $in: [scope, 'ALL'] };
-  else if (q.team) filter.team = q.team === 'ALL' ? 'ALL' : { $in: [q.team, 'ALL'] };
+  if (user.role === 'team') {
+    filter.$or = [{ team: 'ALL' }, { team: { $regex: new RegExp(`(?:^|,)\\s*${scope}\\s*(?:,|$)`, 'i') } }];
+  } else if (q.team) {
+    if (q.team === 'ALL') filter.team = 'ALL';
+    else filter.$or = [{ team: 'ALL' }, { team: { $regex: new RegExp(`(?:^|,)\\s*${q.team}\\s*(?:,|$)`, 'i') } }];
+  }
   if (q.from || q.to) filter.date = { ...(q.from && { $gte: q.from }), ...(q.to && { $lte: q.to }) };
 
   const sessions = await AttendanceSession.find(filter).sort({ date: -1, startTime: -1 }).lean();
