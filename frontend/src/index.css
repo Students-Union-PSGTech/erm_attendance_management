@@ -93,3 +93,11 @@
 .badge {
   @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
 }
+
+/* Phones */
+@media (max-width: 639px) {
+  /* 16px inputs stop iOS Safari from zooming in on focus */
+  input, select, textarea { font-size: 16px !important; }
+  .stat-card { padding: 1rem; }
+  .table-row { gap: 0.75rem; padding-left: 1rem; padding-right: 1rem; }
+}

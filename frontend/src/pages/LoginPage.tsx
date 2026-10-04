@@ -53,7 +53,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50 flex flex-col items-center justify-center px-4">
+    <div className="min-h-dvh bg-slate-50 flex flex-col items-center justify-center px-4 py-8">
 
       {/* Brand */}
       <div className="flex flex-col items-center mb-6">
@@ -67,7 +67,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-sm p-7">
+      <div className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-sm p-5 sm:p-7">
         <h2 className="text-base font-semibold text-slate-800 mb-5">Sign in to continue</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">

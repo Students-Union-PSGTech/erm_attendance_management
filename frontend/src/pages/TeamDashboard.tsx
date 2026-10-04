@@ -772,7 +772,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   }, [members]);
 
   return (
-    <div className="flex h-screen bg-[#F7F8FC] overflow-hidden text-slate-900">
+    <div className="flex h-dvh bg-[#F7F8FC] overflow-hidden text-slate-900">
       {/* ── Mobile Sidebar Backdrop ── */}
       {sidebarOpen && (
         <div
@@ -870,7 +870,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       {/* ── Main Area ── */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Content Container */}
-        <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-7">
+        <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 sm:py-7">
           {/* Header */}
           <div className="flex items-center gap-3.5 mb-6">
             <button
@@ -945,7 +945,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             </div>
           )}
 
-          
+          {/* ══════════════════════════════════════════════
+              VIEW 1: OVERVIEW
+             ══════════════════════════════════════════════ */}
           {!loading && activeNav === 'Overview' && (
             <div className="space-y-6">
               {/* Hero Banner */}
@@ -1135,7 +1137,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     </div>
                                     <button
                                       onClick={() => setHiddenColumns(prev => [...prev, header])}
-                                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
+                                      className="hidden md:block opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
                                       title={`Hide ${header}`}
                                     >
                                       <Minus className="w-3.5 h-3.5" />
@@ -1144,7 +1146,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                 </th>
                               );
                             })}
-                          <th className="px-6 py-3.5 text-right w-24">
+                          <th className="px-4 sm:px-6 py-3.5 text-right w-24 sticky right-0 bg-slate-50">
                             {hiddenColumns.length > 0 ? (
                               <div className="relative group inline-block text-left">
                                 <button className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Restore columns">
@@ -1212,7 +1214,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                               </td>
                             )}
 
-                            <td className="px-6 py-3.5 text-right">
+                            <td className="px-3 sm:px-6 py-3.5 text-right sticky right-0 bg-white shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.12)] md:shadow-none">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => handleOpenHistory(m)}
@@ -1244,7 +1246,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               VIEW 4: ATTENDANCE
              ══════════════════════════════════════════════ */}
           {!loading && activeNav === 'Attendance' && (
-            <div className="flex flex-col gap-4 h-full max-h-[calc(100vh-100px)] animate-in fade-in duration-500">
+            <div className="flex flex-col gap-4 md:h-full md:max-h-[calc(100vh-100px)] animate-in fade-in duration-500">
               {!activeSession ? (
                 <>
                   {/* ── Last 3 Sessions Absentees Section ── */}
@@ -1374,17 +1376,17 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <h2 className="text-xl font-bold text-slate-900">Recent Sessions</h2>
-                    <div className="flex items-center gap-4">
-                      <div className="relative">
+                    <div className="flex items-center gap-2 sm:gap-4">
+                      <div className="relative flex-1 sm:flex-none">
                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input 
                           type="text" 
                           placeholder="Search sessions..." 
                           value={searchMeetingQuery}
                           onChange={(e) => setSearchMeetingQuery(e.target.value)}
-                          className="w-64 pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
+                          className="w-full sm:w-64 pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all"
                         />
                         {searchMeetingQuery && (
                           <button onClick={() => setSearchMeetingQuery('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -1394,10 +1396,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       </div>
                       <button 
                         onClick={openCreateMeeting}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors shadow-sm shadow-indigo-600/20 flex items-center gap-2 text-sm cursor-pointer"
+                        className="shrink-0 px-3 sm:px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition-colors shadow-sm shadow-indigo-600/20 flex items-center gap-2 text-sm cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
-                        New Session
+                        <span className="hidden sm:inline">New Session</span><span className="sm:hidden">New</span>
                       </button>
                     </div>
                   </div>
@@ -1603,11 +1605,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       <table className="w-full text-left border-collapse">
                         <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
                           <tr>
-                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Member</th>
-                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
-                            <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              <div className="flex items-center justify-center gap-4">
-                                <span>{canManage(activeSession) ? 'Mark Attendance (Click Present to toggle)' : 'Attendance Status'}</span>
+                            <th className="px-3 sm:px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Member</th>
+                            <th className="hidden sm:table-cell px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
+                            <th className="px-3 sm:px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              <div className="flex flex-col sm:flex-row items-end sm:items-center justify-center gap-2 sm:gap-4">
+                                <span className={canManage(activeSession) ? 'hidden md:inline' : ''}>{canManage(activeSession) ? 'Mark Attendance (Click Present to toggle)' : 'Status'}</span>
                                 {canManage(activeSession) && (
                                   <div className="flex items-center gap-2">
                                     <button onClick={() => handleBulkMark('PRESENT')} disabled={bulkMarking} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100 transition-colors disabled:opacity-50">All Present</button>
@@ -1623,49 +1625,49 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             const status = m.status;
                             return (
                               <tr key={m.id} className="hover:bg-slate-50/50">
-                                <td className="px-6 py-3 whitespace-nowrap">
+                                <td className="px-3 sm:px-6 py-3 sm:whitespace-nowrap">
                                   <p className="font-medium text-slate-900">{m.name}</p>
-                                  <p className="text-xs text-slate-500">{m.rollNo || 'No Roll No'}</p>
+                                  <p className="text-xs text-slate-500">{m.rollNo || 'No Roll No'}<span className="sm:hidden"> · {m.role}</span></p>
                                 </td>
-                                <td className="px-6 py-3 whitespace-nowrap">
+                                <td className="hidden sm:table-cell px-6 py-3 whitespace-nowrap">
                                   <span className="text-xs font-medium px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg">{m.role}</span>
                                 </td>
-                                <td className="px-6 py-3 whitespace-nowrap">
-                                  <div className="flex items-center justify-center gap-2">
+                                <td className="px-3 sm:px-6 py-3 whitespace-nowrap">
+                                  <div className="flex items-center justify-end sm:justify-center gap-1.5 sm:gap-2">
                                     {canManage(activeSession) ? (
                                       <>
                                         <button 
                                           onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
                                           disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             status === 'PRESENT' 
                                               ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
                                               : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
                                           }`}
                                         >
-                                          <Check className="w-3.5 h-3.5" /> Present
+                                          <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Present</span>
                                         </button>
                                         <button 
                                           onClick={() => markMember(activeSession, m.id, 'ABSENT')}
                                           disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             status === 'ABSENT' 
                                               ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20' 
                                               : 'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
                                           }`}
                                         >
-                                          <X className="w-3.5 h-3.5" /> Absent
+                                          <X className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Absent</span>
                                         </button>
                                         <button 
                                           onClick={() => markMember(activeSession, m.id, 'INFORMED')}
                                           disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             status === 'INFORMED' 
                                               ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' 
                                               : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'
                                           }`}
                                         >
-                                          <FileText className="w-3.5 h-3.5" /> Informed
+                                          <FileText className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Informed</span>
                                         </button>
                                       </>
                                     ) : (
@@ -1879,7 +1881,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 {
   editModalOpen && editingMember && (
     <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 max-h-[90dvh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
           <div>
@@ -2009,7 +2011,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 {
   meetingModalOpen && (
     <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 max-h-[90dvh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-900">
@@ -2151,7 +2153,13 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   )
 }
 
+{/* ══════════════════════════════════════════════
+          CHANGE LOGIN MODAL
+         ══════════════════════════════════════════════ */}
 
+{/* ══════════════════════════════════════════════
+          DELETE MEETING CONFIRMATION
+         ══════════════════════════════════════════════ */}
 {
   deletingMeeting && (
     <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">

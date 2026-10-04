@@ -250,7 +250,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   };
 
   return (
-    <div className="flex h-screen bg-[#F7F8FC] overflow-hidden text-slate-900">
+    <div className="flex h-dvh bg-[#F7F8FC] overflow-hidden text-slate-900">
 
       {/* ── Mobile/Overlay Backdrop ── */}
       {sidebarOpen && (
@@ -344,7 +344,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto px-6 md:px-8 py-7">
+        <main className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-5 sm:py-7">
           <div className="flex items-center gap-3.5 mb-6">
             <button
               onClick={() => setSidebarOpen((prev) => !prev)}
@@ -371,12 +371,12 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
                 {/* Hero Stat - Total Members */}
-                <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 text-white shadow-lg shadow-blue-500/20 flex items-center justify-between">
+                <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-5 sm:p-8 text-white shadow-lg shadow-blue-500/20 flex items-center justify-between gap-4">
                   <div>
                     <p className="text-blue-100 font-medium mb-1">Total Organization Size</p>
-                    <h2 className="text-5xl font-bold tracking-tight">{totalMembers} <span className="text-2xl font-normal text-blue-200">Members</span></h2>
+                    <h2 className="text-4xl sm:text-5xl font-bold tracking-tight">{totalMembers} <span className="text-lg sm:text-2xl font-normal text-blue-200">Members</span></h2>
                   </div>
-                  <div className="w-20 h-20 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-sm border border-white/20">
+                  <div className="hidden sm:flex w-20 h-20 rounded-2xl bg-white/10 items-center justify-center backdrop-blur-sm border border-white/20 shrink-0">
                     <Users className="w-10 h-10 text-white" />
                   </div>
                 </div>
@@ -418,7 +418,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           )}
 
           {activeNav === 'Members' && (
-            <div className="flex flex-col gap-4 h-full max-h-[calc(100vh-100px)] animate-in fade-in duration-500">
+            <div className="flex flex-col gap-4 md:h-full md:max-h-[calc(100vh-100px)] animate-in fade-in duration-500">
 
               {/* Complex Search Bar */}
               <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm shrink-0">
@@ -441,7 +441,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   </div>
 
                   {/* Filters */}
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 focus-within:border-blue-400 focus-within:bg-white focus-within:ring-4 focus-within:ring-blue-50 transition-all">
                       <Filter className="w-3.5 h-3.5 text-slate-400" />
                       <select
@@ -511,7 +511,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                                   </div>
                                   <button
                                     onClick={() => setHiddenColumns(prev => [...prev, header])}
-                                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
+                                    className="hidden md:block opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
                                     title={`Hide ${header}`}
                                   >
                                     <Minus className="w-3.5 h-3.5" />
@@ -520,7 +520,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                               </th>
                             );
                           })}
-                          <th className="px-6 py-3 w-16 text-right">
+                          <th className="px-4 sm:px-6 py-3 w-16 text-right sticky right-0 bg-slate-50">
                             {hiddenColumns.length > 0 && (
                               <div className="relative group inline-block text-left">
                                 <button className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Restore columns">
@@ -591,7 +591,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                               {m.phone || '-'}
                             </td>
                           )}
-                          <td className="px-4 py-3 whitespace-nowrap text-right">
+                          <td className="px-3 sm:px-4 py-3 whitespace-nowrap text-right sticky right-0 bg-white shadow-[-8px_0_8px_-8px_rgba(15,23,42,0.12)] md:shadow-none">
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={() => handleOpenHistory(m)}
@@ -792,7 +792,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                ══════════════════════════════════════════════ */}
       {editModalOpen && editingMember && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-xl border border-slate-200 max-h-[90dvh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
