@@ -26,8 +26,6 @@ import {
   ArrowUp,
   ArrowRight,
   ChevronLeft,
-  ChevronDown,
-  ChevronUp,
   ArrowDown,
   ArrowUpDown,
   Minus,
@@ -35,6 +33,8 @@ import {
   Sparkles
 } from 'lucide-react';
 import ReportsView from './ReportsView';
+import { isUpcoming, opensLabel } from './sessionTime';
+import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
 import TopographyBackground from '../components/TopographyBackground';
 
 interface TeamDashboardProps {
@@ -153,6 +153,15 @@ const sortSessions = (list: AttendanceSession[]) =>
     return (b.startTime || '').localeCompare(a.startTime || '');
   });
 
+// Members are listed LEAD → CO-LEAD → COORDINATOR → CORE, then by name
+const ROLE_ORDER = ['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'];
+const roleRank = (role?: string) => {
+  const i = ROLE_ORDER.indexOf((role || '').toUpperCase());
+  return i === -1 ? ROLE_ORDER.length : i;
+};
+const byRoleThenName = (a: { role?: string; name?: string }, b: { role?: string; name?: string }) =>
+  roleRank(a.role) - roleRank(b.role) || (a.name || '').localeCompare(b.name || '');
+
 export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const teamName = user.team || 'TECH';
   const [activeNav, setActiveNav] = useState<NavKey>('Overview');
@@ -208,10 +217,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Recent Absentees for Last 3 Sessions
-  const [recentAbsentees, setRecentAbsentees] = useState<any[]>([]);
-  const [absenteesLoading, setAbsenteesLoading] = useState(true);
-  const [expandedSessionIds, setExpandedSessionIds] = useState<Record<string, boolean>>({});
 
   // Members View Filters & Search
   const [searchMemberQuery, setSearchMemberQuery] = useState('');
@@ -321,23 +326,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     };
   };
 
-  const fetchRecentAbsentees = async () => {
-    setAbsenteesLoading(true);
-    try {
-      const res = await fetch('/api/sessions/recent-absentees', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRecentAbsentees(data.sessions || []);
-      }
-    } catch (err) {
-      console.error('Failed to fetch recent absentees:', err);
-    } finally {
-      setAbsenteesLoading(false);
-    }
-  };
-
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -384,7 +372,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         setAttendanceStats(teamStats);
       }
 
-      fetchRecentAbsentees();
     } catch (err: any) {
       console.error('Error fetching team data:', err);
       setError(err.message || 'Unable to connect to backend server');
@@ -444,10 +431,16 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   }, [membersWithStats, filterRole, searchMemberQuery, activeNav]);
 
 
+  // Default order: role (LEAD → CO-LEAD → COORDINATOR → CORE), then name.
+  // Column sorts apply first; sorting by Role uses the same role order, not A-Z.
   const sortedMembers = useMemo(() => {
-    if (sortConfigs.length === 0) return filteredMembers;
     return [...filteredMembers].sort((a, b) => {
       for (const { key, direction } of sortConfigs) {
+        if (key === 'role') {
+          const diff = roleRank(a.role) - roleRank(b.role);
+          if (diff !== 0) return direction === 'asc' ? diff : -diff;
+          continue;
+        }
         let aVal = a[key as keyof typeof a];
         let bVal = b[key as keyof typeof b];
         if (aVal == null) aVal = '';
@@ -459,7 +452,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         if (aVal < bVal) return direction === 'asc' ? -1 : 1;
         if (aVal > bVal) return direction === 'asc' ? 1 : -1;
       }
-      return 0;
+      return byRoleThenName(a, b);
     });
   }, [filteredMembers, sortConfigs]);
 
@@ -692,7 +685,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       }
       setSessions((prev) => prev.filter((s) => s.id !== deletingMeeting.id));
       if (selectedSessionId === deletingMeeting.id) setSelectedSessionId('');
-      fetchRecentAbsentees(); // the deleted session may be one of the last 3
       flash('success', 'Meeting deleted');
       setDeletingMeeting(null);
     } catch (err: any) {
@@ -721,6 +713,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     memberId: string,
     status: SessionRecord['status'] | null,
   ): Promise<boolean> => {
+    if (isUpcoming(session)) {
+      flash('error', `This meeting hasn't started yet. ${opensLabel(session)}.`);
+      return false;
+    }
     const previous = session.records?.[memberId];
     setLocalRecord(
       session.id,
@@ -776,7 +772,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   /** Bulk mark all members in the current view. */
   const handleBulkMark = async (status: SessionRecord['status']) => {
-    if (!activeSession) return;
+    if (!activeSession || isUpcoming(activeSession)) return; // can't mark before the meeting starts
     const targets = sessionMembersList;
     if (targets.length === 0) return;
 
@@ -839,12 +835,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const teamCore = useMemo(() => {
     return members.filter((m) => m.role === 'CORE');
   }, [members]);
-
-  const teamRecentAbsentees = useMemo(() => {
-    return recentAbsentees.filter(
-      (s: any) => s.team === 'ALL' || s.team.split(',').map((t: string) => t.trim()).includes(teamName)
-    );
-  }, [recentAbsentees, teamName]);
 
   return (
     <div className="flex h-dvh text-slate-100 overflow-hidden relative">
@@ -1105,7 +1095,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   </div>
                   <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                     <p className="text-[10px] uppercase font-mono text-slate-400">Active Meetings</p>
-                    <p className="text-lg font-bold text-sky-300 font-mono mt-0.5">{sessions.length} Recorded</p>
+                    <p className="text-lg font-bold text-sky-300 font-mono mt-0.5">{sessions.filter(s => !isUpcoming(s)).length} Held</p>
                   </div>
                   <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                     <p className="text-[10px] uppercase font-mono text-slate-400">Attendance Rate</p>
@@ -1163,7 +1153,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       {sessions.length}
                     </div>
                     <p className="text-xs text-slate-400 font-mono mt-1">
-                      {sessions.length === 0 ? 'No meetings created' : 'Team & Union sessions'}
+                      {sessions.length === 0
+                        ? 'No meetings created'
+                        : `Team & Union sessions${sessions.some(s => isUpcoming(s)) ? ` · ${sessions.filter(s => isUpcoming(s)).length} upcoming` : ''}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 text-[11px] font-mono text-indigo-300 mt-3 pt-2 border-t border-white/5">
@@ -1324,112 +1316,15 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   </button>
                 </div>
 
-                {teamRecentAbsentees.length === 0 ? (
-                  <div className="py-12 text-center text-slate-400 font-mono text-xs">
-                    <Calendar className="w-10 h-10 mx-auto mb-2 text-slate-600 stroke-1" />
-                    <p>No recent meetings recorded for {teamName} team yet.</p>
-                    <button
-                      onClick={openCreateMeeting}
-                      className="btn-sky-glow px-4 py-2 mt-3 text-xs inline-flex items-center gap-2 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Create New Meeting
-                    </button>
+                {/* One card per vertical (with members): its own last 3 meetings, admin- or team-created */}
+                {repeatAbsenteeCards(sessions as any, members as any, [teamName]).length === 0 ? (
+                  <div className="py-8 text-center bg-white/[0.02] rounded-md border border-dashed border-white/10">
+                    <UserX className="w-8 h-8 mx-auto mb-2 text-slate-500 opacity-60" />
+                    <p className="text-sm font-semibold text-slate-300">No members or meetings yet.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Each vertical's last 3 meetings will show here once meetings are recorded.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                    {teamRecentAbsentees.slice(0, 3).map((session: any, idx: number) => {
-                      const teams = (session.team || teamName).split(',').map((t: string) => t.trim().toUpperCase());
-                      const targetMembers = (session.team === 'ALL' || teams.includes('ALL'))
-                        ? members
-                        : members.filter(m => teams.includes(m.team?.toUpperCase() || ''));
-                      const targetCount = session.totalTargetCount || (targetMembers.length > 0 ? targetMembers.length : (session.presentCount + session.absentCount)) || 1;
-                      const presentPct = Math.round(((session.presentCount || 0) / Math.max(1, targetCount)) * 100);
-
-                      return (
-                        <div
-                          key={session.id || idx}
-                          className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between border-white/10 hover:border-sky-400/50"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="badge-reactbits-new truncate max-w-[120px]">
-                                {session.team === 'ALL' ? 'All Union' : `${session.team} Team`}
-                              </span>
-                              <span className="text-[11px] font-mono text-slate-400">
-                                {session.date ? new Date(session.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'Recent'}
-                              </span>
-                            </div>
-                            <h4 className="text-sm font-bold text-white line-clamp-1 mt-1 font-mono">
-                              {session.topic || session.name || 'Team Attendance Session'}
-                            </h4>
-
-                            {/* Attendance health bar */}
-                            <div className="mt-3">
-                              <div className="flex items-center justify-between text-xs font-mono mb-1.5">
-                                <span className="text-slate-400">Attendance Rate</span>
-                                <span className={`font-bold ${presentPct >= 80 ? 'text-emerald-400' : presentPct >= 60 ? 'text-amber-400' : 'text-rose-400'}`}>
-                                  {presentPct}% ({session.presentCount}/{targetCount})
-                                </span>
-                              </div>
-                              <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-500 ${
-                                    presentPct >= 80 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' :
-                                    presentPct >= 60 ? 'bg-gradient-to-r from-amber-500 to-yellow-400' :
-                                    'bg-gradient-to-r from-rose-500 to-pink-500'
-                                  }`}
-                                  style={{ width: `${presentPct}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Absentees snippet */}
-                            <div className="mt-4 pt-3 border-t border-white/5">
-                              <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
-                                <span className="flex items-center gap-1 text-rose-300">
-                                  <UserX className="w-3.5 h-3.5 text-rose-400" />
-                                  Absentees ({session.absentCount || 0})
-                                </span>
-                              </div>
-                              {session.absentees && session.absentees.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
-                                  {session.absentees.slice(0, 4).map((a: any, aIdx: number) => (
-                                    <span
-                                      key={a.id || aIdx}
-                                      className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-rose-200"
-                                    >
-                                      {a.name}
-                                    </span>
-                                  ))}
-                                  {session.absentees.length > 4 && (
-                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">
-                                      +{session.absentees.length - 4} more
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <p className="text-[11px] font-mono text-emerald-400">
-                                  ✨ Perfect attendance recorded!
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              setSelectedSessionId(session.id);
-                              navigateTo('Attendance');
-                            }}
-                            className="mt-4 w-full btn-rect-secondary py-2 text-xs font-mono flex items-center justify-center gap-2 cursor-pointer hover:border-sky-400/50"
-                          >
-                            <span>Mark / Edit Attendance</span>
-                            <ChevronRight className="w-3.5 h-3.5 text-sky-300" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <RepeatAbsentees sessions={sessions as any} members={members as any} teams={[teamName]} showTitle={false} />
                 )}
               </div>
 
@@ -1748,7 +1643,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               VIEW 4: ATTENDANCE
              ══════════════════════════════════════════════ */}
           {!loading && activeNav === 'Attendance' && (
-            <div className="flex flex-col gap-4 md:h-full md:max-h-[calc(100vh-100px)] animate-in fade-in duration-500">
+            <div className="flex flex-col gap-4 pb-6 animate-in fade-in duration-500">
               {!activeSession ? (
                 <>
                   {/* ── Last 3 Sessions Absentees Section ── */}
@@ -1762,119 +1657,25 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           <div className="flex items-center gap-2">
                             <h3 className="text-base font-bold text-white uppercase tracking-wide">Last 3 Sessions Absentees</h3>
                             <span className="text-[10px] px-2 py-0.5 rounded-sm bg-sky-950/60 text-sky-300 border border-sky-500/30 font-mono font-bold uppercase">
-                              {recentAbsentees.length} {recentAbsentees.length === 1 ? 'session' : 'sessions'}
+                              {teamName}
                             </span>
                           </div>
                           <p className="text-xs text-slate-400 font-mono mt-0.5">
-                            Overview of absent members across the three most recent attendance sessions
+                            Your vertical's last 3 meetings (admin- and team-created) and who missed all three
                           </p>
                         </div>
                       </div>
                     </div>
 
-                    {absenteesLoading ? (
-                      <div className="py-8 flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-                      </div>
-                    ) : recentAbsentees.length === 0 ? (
-                      <div className="py-8 text-center bg-[#050B14]/50 rounded-md border border-dashed border-white/10">
-                        <UserX className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-                        <p className="text-sm font-mono text-slate-300">No previous sessions available.</p>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">
-                          Absentees will automatically be displayed here once sessions are recorded.
-                        </p>
+                    {/* One card per vertical (with members): its own last 3 meetings, admin- or team-created */}
+                    {repeatAbsenteeCards(sessions as any, members as any, [teamName]).length === 0 ? (
+                      <div className="py-8 text-center bg-white/[0.02] rounded-md border border-dashed border-white/10">
+                        <UserX className="w-8 h-8 mx-auto mb-2 text-slate-500 opacity-60" />
+                        <p className="text-sm font-semibold text-slate-300">No members or meetings yet.</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Each vertical's last 3 meetings will show here once meetings are recorded.</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {recentAbsentees.map((s) => {
-                          const isExpanded = expandedSessionIds[s.id] ?? true;
-                          return (
-                            <div
-                              key={s.id}
-                              className="rect-card p-4 flex flex-col justify-between hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(14,165,233,0.12)] transition-all"
-                            >
-                              <div>
-                                <div className="flex items-start justify-between gap-2 mb-2">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                      <span className="px-2 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
-                                        {s.team.split(',').join(', ')}
-                                      </span>
-                                      <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold font-mono uppercase ${
-                                        s.sessionSlot === 'FN' ? 'bg-amber-950/60 text-amber-300 border border-amber-500/30' :
-                                        s.sessionSlot === 'AN' ? 'bg-orange-950/60 text-orange-300 border border-orange-500/30' :
-                                        'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'
-                                      }`}>
-                                        {s.sessionSlot}
-                                      </span>
-                                    </div>
-                                    <h4 className="font-bold text-white text-sm leading-snug line-clamp-1" title={s.title}>
-                                      {s.title}
-                                    </h4>
-                                  </div>
-                                  <span className="px-2 py-0.5 bg-rose-950/70 border border-rose-500/40 text-rose-300 font-mono font-bold rounded-sm text-xs whitespace-nowrap shrink-0">
-                                    {s.absentCount} Absent
-                                  </span>
-                                </div>
-
-                                <div className="flex items-center gap-3 text-xs text-slate-400 font-mono mb-3">
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
-                                    {s.date}
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3.5 h-3.5 text-sky-400" />
-                                    {s.startTime} {s.endTime ? `- ${s.endTime}` : ''}
-                                  </span>
-                                </div>
-
-                                <div className="mb-3">
-                                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 mb-1.5">
-                                    <span>Absentee List ({s.absentees.length})</span>
-                                    <button
-                                      onClick={() => setExpandedSessionIds(prev => ({ ...prev, [s.id]: !isExpanded }))}
-                                      className="text-sky-400 hover:text-sky-300 font-semibold cursor-pointer flex items-center gap-0.5"
-                                    >
-                                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                      {isExpanded ? 'Hide' : 'Show'}
-                                    </button>
-                                  </div>
-
-                                  {isExpanded && (
-                                    s.absentees.length === 0 ? (
-                                      <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-sm p-2 text-center text-xs text-emerald-300 font-mono">
-                                        🎉 100% Attendance — Zero Absentees!
-                                      </div>
-                                    ) : (
-                                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-sm border border-white/10 bg-[#050B14] p-2 custom-scrollbar">
-                                        {s.absentees.map((ab: any) => (
-                                          <div key={ab.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded-sm hover:bg-white/5">
-                                            <div className="min-w-0 flex-1 pr-2">
-                                              <p className="font-semibold text-white truncate">{ab.name}</p>
-                                              <p className="text-[10px] text-slate-400 font-mono truncate">{ab.rollNo || ab.department || 'No Roll No'}</p>
-                                            </div>
-                                            <span className="text-[9px] px-1.5 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 rounded-sm font-mono shrink-0">
-                                              {ab.team}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              </div>
-
-                              <button
-                                onClick={() => setSelectedSessionId(s.id)}
-                                className="btn-sky-glow w-full mt-2 py-2 px-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
-                              >
-                                View & Manage Session
-                                <ArrowRight className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <RepeatAbsentees sessions={sessions as any} members={members as any} teams={[teamName]} showTitle={false} />
                     )}
                   </div>
 
@@ -1926,8 +1727,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           s.date.includes(q) ||
                           (s.sessionSlot || '').toLowerCase().includes(q);
                       }).map(session => {
-                        const targetCount = members.filter(m => session.team.split(',').map(t => t.trim()).includes(m.team)).length;
-                        const markedCount = session.records ? Object.keys(session.records).filter(id => members.some(m => m.id === id)).length : 0;
+                        const sessionTeams = session.team.split(',').map(t => t.trim().toUpperCase());
+                        const targetMembers = sessionTeams.includes('ALL') ? members : members.filter(m => sessionTeams.includes(m.team));
+                        const targetCount = targetMembers.length;
+                        const markedCount = targetMembers.filter(m => session.records?.[m.id]).length;
                         const progress = targetCount === 0 ? 0 : Math.round((markedCount / targetCount) * 100);
 
                         return (
@@ -1988,6 +1791,12 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                               </p>
                             )}
 
+                            {isUpcoming(session) ? (
+                              <div className="flex items-center justify-between text-xs font-mono">
+                                <span className="px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-indigo-950/60 text-indigo-300 border border-indigo-500/30">Upcoming</span>
+                                <span className="text-slate-400">{opensLabel(session)}</span>
+                              </div>
+                            ) : (
                             <div>
                               <div className="flex items-center justify-between text-xs font-mono mb-1.5">
                                 <span className="text-slate-400">Attendance Progress</span>
@@ -2000,6 +1809,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                 />
                               </div>
                             </div>
+                            )}
                           </div>
                         );
                       })}
@@ -2076,7 +1886,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             Present
                           </span>
                           <div className="text-xl font-black text-emerald-300 font-mono">
-                            {activeSessionStats.present}
+                            {isUpcoming(activeSession) ? '—' : activeSessionStats.present}
                           </div>
                         </div>
 
@@ -2085,7 +1895,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             Absent
                           </span>
                           <div className="text-xl font-black text-rose-300 font-mono">
-                            {activeSessionStats.absent}
+                            {isUpcoming(activeSession) ? '—' : activeSessionStats.absent}
                           </div>
                         </div>
 
@@ -2094,16 +1904,26 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             Informed
                           </span>
                           <div className="text-xl font-black text-sky-200 font-mono">
-                            {activeSessionStats.informed}
+                            {isUpcoming(activeSession) ? '—' : activeSessionStats.informed}
                           </div>
                         </div>
                       </div>
                     )}
                   </div>
 
+                  {isUpcoming(activeSession) && (
+                    <div className="mt-2 px-4 py-3 rounded-md border border-indigo-500/40 bg-indigo-950/40 text-xs text-indigo-200 flex items-center gap-2 font-mono">
+                      <Clock className="w-4 h-4 text-indigo-300 shrink-0" />
+                      <span>
+                        <span className="font-bold uppercase tracking-wider mr-1.5">Upcoming</span>
+                        Attendance can be marked once the meeting starts ({opensLabel(activeSession)}). It isn't counted in any stats until then.
+                      </span>
+                    </div>
+                  )}
+
                   {/* Session Members Attendance Table */}
-                  <div className="rect-card-elevated overflow-hidden flex-1 flex flex-col min-h-0 mt-2">
-                    <div className="overflow-auto flex-1 p-0 custom-scrollbar">
+                  <div className="rect-card-elevated overflow-hidden flex flex-col mt-2">
+                    <div className="overflow-auto max-h-[calc(100dvh-120px)] min-h-[320px] p-0 custom-scrollbar">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead className="bg-[#050B14]/90 sticky top-0 z-10 border-b border-white/10 font-mono">
                           <tr>
@@ -2116,14 +1936,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => handleBulkMark('PRESENT')}
-                                      disabled={bulkMarking}
+                                      disabled={bulkMarking || isUpcoming(activeSession)}
                                       className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-400 border border-emerald-500/40 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
                                     >
                                       All Present
                                     </button>
                                     <button
                                       onClick={() => handleBulkMark('ABSENT')}
-                                      disabled={bulkMarking}
+                                      disabled={bulkMarking || isUpcoming(activeSession)}
                                       className="px-2.5 py-1 bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 border border-rose-500/40 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
                                     >
                                       All Absent
@@ -2154,8 +1974,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                       <>
                                         <button
                                           onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
-                                          disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                                          disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
+                                          title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                                             status === 'PRESENT'
                                               ? 'bg-emerald-600 text-white shadow-[0_0_12px_rgba(16,185,129,0.5)] border border-emerald-400'
                                               : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 border border-white/10'
@@ -2165,8 +1986,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                         </button>
                                         <button
                                           onClick={() => markMember(activeSession, m.id, 'ABSENT')}
-                                          disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                                          disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
+                                          title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                                             status === 'ABSENT'
                                               ? 'bg-rose-600 text-white shadow-[0_0_12px_rgba(244,63,94,0.5)] border border-rose-400'
                                               : 'bg-white/5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-white/10'
@@ -2176,8 +1998,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                         </button>
                                         <button
                                           onClick={() => markMember(activeSession, m.id, 'INFORMED')}
-                                          disabled={markingIds.has(m.id)}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer ${
+                                          disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
+                                          title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
+                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                                             status === 'INFORMED'
                                               ? 'bg-sky-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.5)] border border-sky-400'
                                               : 'bg-white/5 text-slate-400 hover:text-sky-300 hover:bg-sky-950/40 border border-white/10'

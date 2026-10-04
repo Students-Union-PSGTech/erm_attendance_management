@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import AttendanceView from './AttendanceView';
 import ReportsView from './ReportsView';
+import { isUpcoming } from './sessionTime';
+import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
 import type { MemberHistoryDetail } from './TeamDashboard';
 import TopographyBackground from '../components/TopographyBackground';
 
@@ -47,6 +49,23 @@ const avatarColor = (name: string) => {
   const colors = ['#0EA5E9', '#0284C7', '#06B6D4', '#059669', '#38BDF8', '#2563EB'];
   return colors[name.charCodeAt(0) % colors.length];
 };
+
+// Members are listed LEAD → CO-LEAD → COORDINATOR → CORE, then by name
+const ROLE_ORDER = ['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'];
+const roleRank = (role?: string) => {
+  const i = ROLE_ORDER.indexOf((role || '').toUpperCase());
+  return i === -1 ? ROLE_ORDER.length : i;
+};
+const byRoleThenName = (a: { role?: string; name?: string }, b: { role?: string; name?: string }) =>
+  roleRank(a.role) - roleRank(b.role) || (a.name || '').localeCompare(b.name || '');
+
+// Verticals are always shown in this order
+const TEAM_ORDER = ['ERM', 'TECH', 'PR', 'DESIGN', 'AMBIANCE', 'MEDIA'];
+const teamRank = (team?: string) => {
+  const i = TEAM_ORDER.indexOf((team || '').toUpperCase());
+  return i === -1 ? TEAM_ORDER.length : i;
+};
+const ROLE_SHORT: Record<string, string> = { 'LEAD': 'L', 'CO-LEAD': 'CL', 'COORDINATOR': 'C', 'CORE': 'Co' };
 
 export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
   const [activeNav, setActiveNav] = useState<NavKey>('Overview');
@@ -116,7 +135,6 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedMemberHistory, setSelectedMemberHistory] = useState<MemberHistoryDetail | null>(null);
   const [sessions, setSessions] = useState<any[]>([]);
-  const [recentAbsentees, setRecentAbsentees] = useState<any[]>([]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -127,17 +145,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
-      const [sessRes, absRes] = await Promise.all([
-        fetch('/api/sessions', { headers }),
-        fetch('/api/sessions/recent-absentees', { headers }),
-      ]);
+      const sessRes = await fetch('/api/sessions', { headers });
       if (sessRes.ok) {
         const sData = await sessRes.json();
         setSessions(sData.sessions || []);
-      }
-      if (absRes.ok) {
-        const aData = await absRes.json();
-        setRecentAbsentees(aData.sessions || []);
       }
     } catch (e) {
       console.error('Failed to load overview analytics:', e);
@@ -245,7 +256,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     acc[m.team] = (acc[m.team] || 0) + 1;
     return acc;
   }, {});
-  const teams = Object.entries(teamCounts);
+  const teams = Object.entries(teamCounts).sort(([a], [b]) => teamRank(a) - teamRank(b) || a.localeCompare(b));
 
   const roleCounts = members.reduce<Record<string, number>>((acc, m) => {
     acc[m.role] = (acc[m.role] || 0) + 1;
@@ -273,8 +284,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     });
   };
 
-  const filteredMembers = members.filter(m => {
-    const matchesTeam = filterTeam === 'ALL' || m.team === filterTeam;
+  // Role + search filters (everything except the team), used for the team cards' counts
+  const matchesNonTeamFilters = (m: Member) => {
     let matchesRole = true;
     if (activeNav === 'Leads') {
       matchesRole = m.role === 'LEAD' || m.role === 'CO-LEAD';
@@ -291,17 +302,44 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       (m.rollNo && m.rollNo.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (m.department && m.department.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (m.phone && m.phone.includes(searchQuery));
-    return matchesTeam && matchesRole && matchesSearch;
-  });
+    return matchesRole && matchesSearch;
+  };
+  const nonTeamFiltered = members.filter(matchesNonTeamFilters);
+  const filteredMembers = nonTeamFiltered.filter(m => filterTeam === 'ALL' || m.team === filterTeam);
 
+  // Team cards: All + each vertical in TEAM_ORDER (plus any unexpected team at the end)
+  const teamCards = Array.from(new Set([...TEAM_ORDER, ...members.map(m => m.team)]))
+    .filter(t => TEAM_ORDER.includes(t) || members.some(m => m.team === t))
+    .sort((a, b) => teamRank(a) - teamRank(b) || a.localeCompare(b))
+    .map(team => {
+      const list = nonTeamFiltered.filter(m => m.team === team);
+      const byRole = ROLE_ORDER.map(r => [r, list.filter(m => m.role === r).length] as const).filter(([, n]) => n > 0);
+      return { team, count: list.length, byRole };
+    });
+
+  // Members (sidebar) opens on the first vertical so the list stays short;
+  // the Leads / Coordinators / Core directories open on all verticals.
+  useEffect(() => {
+    if (activeNav === 'Members') setFilterTeam(prev => (prev === 'ALL' ? TEAM_ORDER[0] : prev));
+    else if (['Leads', 'Coordinators', 'Core'].includes(activeNav)) setFilterTeam('ALL');
+  }, [activeNav]);
+
+  // Default order: role (LEAD → CO-LEAD → COORDINATOR → CORE), then name.
+  // Column sorts apply first; sorting by Role uses the same role order, not A-Z.
   const sortedMembers = [...filteredMembers].sort((a, b) => {
     for (const config of sortConfigs) {
+      const dir = config.direction === 'asc' ? 1 : -1;
+      if (config.key === 'role') {
+        const diff = roleRank(a.role) - roleRank(b.role);
+        if (diff !== 0) return diff * dir;
+        continue;
+      }
       const aVal = (a[config.key] || '').toString().toLowerCase();
       const bVal = (b[config.key] || '').toString().toLowerCase();
-      if (aVal < bVal) return config.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return config.direction === 'asc' ? 1 : -1;
+      if (aVal < bVal) return -dir;
+      if (aVal > bVal) return dir;
     }
-    return 0;
+    return byRoleThenName(a, b);
   });
 
   const SortIcon = ({ columnKey }: { columnKey: keyof Member }) => {
@@ -542,8 +580,13 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       <p className="text-lg font-bold text-white font-mono mt-0.5">{teams.length} Teams</p>
                     </div>
                     <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
-                      <p className="text-[10px] uppercase font-mono text-slate-400">Recorded Sessions</p>
-                      <p className="text-lg font-bold text-sky-300 font-mono mt-0.5">{sessions.length} Meetings</p>
+                      <p className="text-[10px] uppercase font-mono text-slate-400">Held Sessions</p>
+                      <p className="text-lg font-bold text-sky-300 font-mono mt-0.5">
+                        {sessions.filter(s => !isUpcoming(s)).length} Meetings
+                        {sessions.some(s => isUpcoming(s)) && (
+                          <span className="text-xs text-indigo-300 font-medium ml-1.5">+{sessions.filter(s => isUpcoming(s)).length} upcoming</span>
+                        )}
+                      </p>
                     </div>
                     <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                       <p className="text-[10px] uppercase font-mono text-slate-400">Leadership Roster</p>
@@ -696,109 +739,15 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     </button>
                   </div>
 
-                  {recentAbsentees.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400 font-mono text-xs">
-                      <Calendar className="w-10 h-10 mx-auto mb-2 text-slate-600 stroke-1" />
-                      <p>No recent attendance sessions found.</p>
-                      <button
-                        onClick={() => setActiveNav('Attendance')}
-                        className="btn-sky-glow px-4 py-2 mt-3 text-xs inline-flex items-center gap-2 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Create First Session
-                      </button>
+                  {/* One card per vertical (with members): its own last 3 meetings, admin- or team-created */}
+                  {repeatAbsenteeCards(sessions, members).length === 0 ? (
+                    <div className="py-8 text-center bg-white/[0.02] rounded-md border border-dashed border-white/10">
+                      <UserX className="w-8 h-8 mx-auto mb-2 text-slate-500 opacity-60" />
+                      <p className="text-sm font-semibold text-slate-300">No members or meetings yet.</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Each vertical's last 3 meetings will show here once meetings are recorded.</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                      {recentAbsentees.slice(0, 3).map((session, idx) => {
-                        const teams = (session.team || 'ALL').split(',').map((t: string) => t.trim().toUpperCase());
-                        const targetMembers = (session.team === 'ALL' || teams.includes('ALL'))
-                          ? members
-                          : members.filter(m => teams.includes(m.team?.toUpperCase() || ''));
-                        const targetCount = session.totalTargetCount || (targetMembers.length > 0 ? targetMembers.length : (session.presentCount + session.absentCount)) || 1;
-                        const presentPct = Math.round(((session.presentCount || 0) / Math.max(1, targetCount)) * 100);
-
-                        return (
-                          <div
-                            key={session.id || idx}
-                            className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between border-white/10 hover:border-sky-400/50"
-                          >
-                            <div>
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="badge-reactbits-new truncate max-w-[120px]">
-                                  {session.team === 'ALL' ? 'All Union' : `${session.team} Team`}
-                                </span>
-                                <span className="text-[11px] font-mono text-slate-400">
-                                  {session.date ? new Date(session.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'Recent'}
-                                </span>
-                              </div>
-                              <h4 className="text-sm font-bold text-white line-clamp-1 mt-1 font-mono">
-                                {session.topic || session.name || 'General Attendance Meeting'}
-                              </h4>
-
-                              {/* Attendance health bar */}
-                              <div className="mt-3">
-                                <div className="flex items-center justify-between text-xs font-mono mb-1.5">
-                                  <span className="text-slate-400">Attendance Rate</span>
-                                  <span className={`font-bold ${presentPct >= 80 ? 'text-emerald-400' : presentPct >= 60 ? 'text-amber-400' : 'text-rose-400'}`}>
-                                    {presentPct}% ({session.presentCount}/{targetCount})
-                                  </span>
-                                </div>
-                                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full transition-all duration-500 ${
-                                      presentPct >= 80 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' :
-                                      presentPct >= 60 ? 'bg-gradient-to-r from-amber-500 to-yellow-400' :
-                                      'bg-gradient-to-r from-rose-500 to-pink-500'
-                                    }`}
-                                    style={{ width: `${presentPct}%` }}
-                                  />
-                                </div>
-                              </div>
-
-                              {/* Absentees snippet */}
-                              <div className="mt-4 pt-3 border-t border-white/5">
-                                <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-2">
-                                  <span className="flex items-center gap-1 text-rose-300">
-                                    <UserX className="w-3.5 h-3.5 text-rose-400" />
-                                    Absentees ({session.absentCount || 0})
-                                  </span>
-                                </div>
-                                {session.absentees && session.absentees.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
-                                    {session.absentees.slice(0, 4).map((a: any, aIdx: number) => (
-                                      <span
-                                        key={a.id || aIdx}
-                                        className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-rose-200"
-                                      >
-                                        {a.name}
-                                      </span>
-                                    ))}
-                                    {session.absentees.length > 4 && (
-                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">
-                                        +{session.absentees.length - 4} more
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <p className="text-[11px] font-mono text-emerald-400">
-                                    ✨ Perfect attendance recorded!
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            <button
-                              onClick={() => setActiveNav('Attendance')}
-                              className="mt-4 w-full btn-rect-secondary py-2 text-xs font-mono flex items-center justify-center gap-2 cursor-pointer hover:border-sky-400/50"
-                            >
-                              <span>Inspect Session</span>
-                              <ChevronRight className="w-3.5 h-3.5 text-sky-300" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <RepeatAbsentees sessions={sessions} members={members} showTitle={false} />
                   )}
                 </div>
 
@@ -915,20 +864,6 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
                   {/* Filters */}
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <div className="flex items-center gap-1.5 bg-[#0B172B] border border-white/10 rounded-md px-3 py-1.5">
-                      <Filter className="w-3 h-3 text-sky-400" />
-                      <select
-                        value={filterTeam}
-                        onChange={(e) => setFilterTeam(e.target.value)}
-                        className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1"
-                      >
-                        <option value="ALL" className="bg-[#0B172B] text-slate-200">All Domains</option>
-                        {Array.from(new Set(members.map(m => m.team))).sort().map(t => (
-                          <option key={t} value={t} className="bg-[#0B172B] text-slate-200">{t}</option>
-                        ))}
-                      </select>
-                    </div>
-
                     {activeNav === 'Members' && (
                       <div className="flex items-center gap-1.5 bg-[#0B172B] border border-white/10 rounded-md px-3 py-1.5">
                         <Filter className="w-3 h-3 text-sky-400" />
@@ -938,7 +873,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1"
                         >
                           <option value="ALL" className="bg-[#0B172B] text-slate-200">All Roles</option>
-                          {Array.from(new Set(members.map(m => m.role))).sort().map(r => (
+                          {Array.from(new Set(members.map(m => m.role))).sort((a, b) => roleRank(a) - roleRank(b)).map(r => (
                             <option key={r} value={r} className="bg-[#0B172B] text-slate-200">{r}</option>
                           ))}
                         </select>
@@ -946,6 +881,37 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Vertical cards: pick a team (or All) instead of scrolling one long list */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 shrink-0">
+                {[{ team: 'ALL', count: nonTeamFiltered.length, byRole: [] as (readonly [string, number])[] }, ...teamCards].map(({ team, count, byRole }) => {
+                  const active = filterTeam === team;
+                  return (
+                    <button
+                      key={team}
+                      onClick={() => setFilterTeam(team)}
+                      className={`rect-card text-left px-3.5 py-3 cursor-pointer transition-all border ${
+                        active
+                          ? 'border-sky-400/70 bg-sky-500/10 shadow-[0_0_18px_rgba(14,165,233,0.18)]'
+                          : 'border-white/10 hover:border-sky-500/40'
+                      }`}
+                      title={team === 'ALL' ? 'All verticals, grouped by team' : `Show ${team} members`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[11px] font-bold uppercase tracking-wider truncate ${active ? 'text-sky-300' : 'text-slate-300'}`}>
+                          {team === 'ALL' ? 'All Verticals' : team}
+                        </span>
+                        <span className={`text-lg font-bold font-mono leading-none ${active ? 'text-white' : 'text-slate-200'}`}>{count}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-mono mt-1.5 truncate">
+                        {team === 'ALL'
+                          ? `${teamCards.filter(t => t.count > 0).length} teams`
+                          : byRole.length ? byRole.map(([r, n]) => `${n} ${ROLE_SHORT[r] || r}`).join(' · ') : 'No matches'}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Members Table (Crisp Rectangular Card) */}
@@ -974,7 +940,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       </h2>
                       <p className="text-xs text-[#9490A6] mt-0.5">
                         Showing {sortedMembers.length} {sortedMembers.length === 1 ? 'member' : 'members'}
-                        {(filterTeam !== 'ALL' || (activeNav === 'Members' && filterRole !== 'ALL') || searchQuery) && ' (filtered)'}
+                        {filterTeam !== 'ALL' ? ` in ${filterTeam}` : ' across all verticals'}
+                        {((activeNav === 'Members' && filterRole !== 'ALL') || searchQuery) && ' (filtered)'}
                       </p>
                     </div>
                   </div>
@@ -1040,7 +1007,37 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/[0.04]">
-                      {sortedMembers.map((m) => {
+                      {(filterTeam === 'ALL'
+                        ? teamCards.filter(t => t.count > 0).map(t => ({ team: t.team as string | null, rows: sortedMembers.filter(m => m.team === t.team) }))
+                        : [{ team: null as string | null, rows: sortedMembers }]
+                      ).map(group => (
+                        <React.Fragment key={group.team || 'rows'}>
+                          {group.team && group.rows.length > 0 && (
+                            // Bold vertical header; pinned under the column headers while scrolling that team
+                            <tr>
+                              <td
+                                colSpan={8 - hiddenColumns.length}
+                                className="sticky top-[45px] md:top-[51px] z-[5] px-4 sm:px-6 py-3 bg-[#0C1E38] border-y border-sky-500/40 border-l-4 border-l-sky-400 shadow-[0_4px_20px_rgba(0,0,0,0.35)]"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="text-base sm:text-lg font-black text-white uppercase tracking-widest">{group.team}</span>
+                                  <span className="text-[11px] text-slate-400 font-mono">
+                                    {group.rows.length} {group.rows.length === 1 ? 'member' : 'members'}
+                                  </span>
+                                  <span className="ml-auto hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-400">
+                                    {ROLE_ORDER.map(r => [r, group.rows.filter(m => m.role === r).length] as const)
+                                      .filter(([, n]) => n > 0)
+                                      .map(([r, n]) => (
+                                        <span key={r} className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">
+                                          <span className="text-white font-bold">{n}</span> {ROLE_SHORT[r] || r}
+                                        </span>
+                                      ))}
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                      {group.rows.map((m) => {
                         return (
                           <tr
                             key={m.id}
@@ -1114,6 +1111,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           </tr>
                         );
                       })}
+                        </React.Fragment>
+                      ))}
                       {sortedMembers.length === 0 && !loading && (
                         <tr>
                           <td colSpan={7 - hiddenColumns.length + (hiddenColumns.length > 0 ? 1 : 0)} className="px-6 py-12 text-center text-slate-400">
