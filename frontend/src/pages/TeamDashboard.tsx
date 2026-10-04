@@ -635,6 +635,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       }
       setSessions((prev) => prev.filter((s) => s.id !== deletingMeeting.id));
       if (selectedSessionId === deletingMeeting.id) setSelectedSessionId('');
+      fetchRecentAbsentees(); // the deleted session may be one of the last 3
       flash('success', 'Meeting deleted');
       setDeletingMeeting(null);
     } catch (err: any) {
@@ -944,9 +945,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             </div>
           )}
 
-          {/* ══════════════════════════════════════════════
-              VIEW 1: OVERVIEW
-             ══════════════════════════════════════════════ */}
+          
           {!loading && activeNav === 'Overview' && (
             <div className="space-y-6">
               {/* Hero Banner */}
@@ -1451,8 +1450,20 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                   {session.title}
                                 </h3>
                               </div>
-                              <div className="bg-indigo-50 text-indigo-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                                <ArrowRight className="w-4 h-4" />
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {canManage(session) && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setDeletingMeeting(session); }}
+                                    title="Delete session"
+                                    aria-label={`Delete ${session.title}`}
+                                    className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <div className="bg-indigo-50 text-indigo-600 p-2 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                  <ArrowRight className="w-4 h-4" />
+                                </div>
                               </div>
                             </div>
                             
@@ -1519,6 +1530,15 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         </div>
                         <div className="flex items-center gap-3">
                           <h2 className="text-xl font-bold text-slate-900">{activeSession.title}</h2>
+                          {canManage(activeSession) && (
+                            <button
+                              onClick={() => setDeletingMeeting(activeSession)}
+                              title="Delete session"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2131,13 +2151,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   )
 }
 
-{/* ══════════════════════════════════════════════
-          CHANGE LOGIN MODAL
-         ══════════════════════════════════════════════ */}
 
-{/* ══════════════════════════════════════════════
-          DELETE MEETING CONFIRMATION
-         ══════════════════════════════════════════════ */}
 {
   deletingMeeting && (
     <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
