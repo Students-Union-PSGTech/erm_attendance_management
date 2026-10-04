@@ -170,7 +170,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
       <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full max-w-fit self-center border border-slate-200">
         <button
           onClick={() => setActiveTab('performance')}
-          className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
+          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
             activeTab === 'performance' ? 'bg-white text-emerald-600 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
           }`}
         >
@@ -179,7 +179,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
         </button>
         <button
           onClick={() => setActiveTab('stats')}
-          className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
+          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
             activeTab === 'stats' ? 'bg-white text-purple-600 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
           }`}
         >
@@ -188,7 +188,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
         </button>
         <button
           onClick={() => setActiveTab('exports')}
-          className={`flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
+          className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex-1 sm:flex-none ${
             activeTab === 'exports' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
           }`}
         >
@@ -225,7 +225,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
         {activeTab === 'stats' && (
           <div className="bg-white/80 backdrop-blur-2xl border border-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col max-h-[650px] min-h-[300px] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="p-6 border-b border-slate-100/50 shrink-0 flex items-center justify-between bg-white/50">
+            <div className="p-5 sm:p-6 border-b border-slate-100/50 shrink-0 flex items-center justify-between bg-white/50">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
                   <div className="p-2.5 bg-purple-100 text-purple-600 rounded-xl">
@@ -233,24 +233,24 @@ export default function ReportsView({ members }: ReportsViewProps) {
                   </div>
                   Session Pulse
                 </h2>
-                <p className="text-sm text-slate-500 mt-1.5 ml-[52px] font-medium">Daily attendance aggregates & trends</p>
+                <p className="text-sm text-slate-500 mt-1.5 sm:ml-[52px] font-medium">Daily attendance aggregates & trends</p>
               </div>
             </div>
             
-            <div className="flex-1 overflow-auto p-5 pb-8">
+            <div className="flex-1 overflow-auto p-3 sm:p-5 pb-8">
               <div className="space-y-4">
                 {sessionStats.length === 0 ? (
                   <div className="flex items-center justify-center h-40 text-slate-400 font-medium">No session data available.</div>
                 ) : (
                   sessionStats.map((d, i) => (
-                    <div key={d.id} className="group flex items-center justify-between p-5 bg-white border border-slate-100 rounded-2xl hover:shadow-[0_8px_20px_rgb(0,0,0,0.04)] hover:border-purple-200 hover:-translate-y-0.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: `${i * 60}ms`, animationFillMode: 'both' }}>
-                      <div className="flex items-center gap-5">
-                        <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center shrink-0 group-hover:bg-purple-50 group-hover:border-purple-100 transition-colors">
+                    <div key={d.id} className="group flex items-center justify-between gap-3 p-4 sm:p-5 bg-white border border-slate-100 rounded-2xl hover:shadow-[0_8px_20px_rgb(0,0,0,0.04)] hover:border-purple-200 hover:-translate-y-0.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: `${i * 60}ms`, animationFillMode: 'both' }}>
+                      <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center shrink-0 group-hover:bg-purple-50 group-hover:border-purple-100 transition-colors">
                           <span className="text-[10px] font-black text-slate-400 uppercase leading-none mb-1 group-hover:text-purple-400 transition-colors">{new Date(d.date).toLocaleDateString('en-US', { month: 'short' })}</span>
                           <span className="text-xl font-black text-slate-700 leading-none group-hover:text-purple-700 transition-colors">{new Date(d.date).getDate()}</span>
                         </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-base group-hover:text-purple-700 transition-colors truncate max-w-[200px] sm:max-w-[300px]">{d.title}</p>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-900 text-sm sm:text-base group-hover:text-purple-700 transition-colors truncate">{d.title}</p>
                           <p className="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                             {d.present} of {d.marked} present
@@ -258,8 +258,8 @@ export default function ReportsView({ members }: ReportsViewProps) {
                         </div>
                       </div>
                       
-                      <div className="flex flex-col items-end gap-2 w-20">
-                        <span className={`text-xl font-black tracking-tight ${
+                      <div className="flex flex-col items-end gap-2 w-16 sm:w-20 shrink-0">
+                        <span className={`text-lg sm:text-xl font-black tracking-tight ${
                           d.presentPct >= 75 ? 'text-emerald-500' :
                           d.presentPct >= 50 ? 'text-amber-500' : 'text-rose-500'
                         }`}>
@@ -285,7 +285,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
         {activeTab === 'performance' && (
           <div className="bg-white/80 backdrop-blur-2xl border border-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col max-h-[650px] min-h-[300px] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="p-6 border-b border-slate-100/50 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/50">
+            <div className="p-5 sm:p-6 border-b border-slate-100/50 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/50">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
                   <div className="p-2.5 bg-emerald-100 text-emerald-600 rounded-xl">
@@ -293,7 +293,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                   </div>
                   Member Performance
                 </h2>
-                <p className="text-sm text-slate-500 mt-1.5 ml-[52px] font-medium">Cumulative individual statistics</p>
+                <p className="text-sm text-slate-500 mt-1.5 sm:ml-[52px] font-medium">Cumulative individual statistics</p>
               </div>
               <div className="flex flex-col lg:flex-row items-center gap-3">
                 <div className="relative w-full lg:w-64">
@@ -323,7 +323,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
               </div>
             </div>
             
-            <div className="flex-1 overflow-auto p-5 pb-8">
+            <div className="flex-1 overflow-auto p-3 sm:p-5 pb-8">
               <div className="space-y-4">
                 {(() => {
                   const activeMembers = attendanceStats.filter(s => s.total > 0);
@@ -344,7 +344,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
                   return displayedMembers.map((s, i) => (
                     <div key={s.memberId} className="group flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:shadow-[0_8px_20px_rgb(0,0,0,0.04)] hover:border-emerald-200 hover:-translate-y-0.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: `${i * 40}ms`, animationFillMode: 'both' }}>
-                      <div className="flex-1 min-w-0 pr-4">
+                      <div className="flex-1 min-w-0 pr-2 sm:pr-4">
                         <p className="font-bold text-slate-900 truncate group-hover:text-emerald-700 transition-colors text-sm mb-1.5">{s.name}</p>
                         <div className="flex items-center gap-2">
                           <span className="px-2 py-0.5 bg-slate-50 text-slate-500 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-100">{s.team}</span>
@@ -352,7 +352,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-6 shrink-0">
+                      <div className="flex items-center gap-3 sm:gap-6 shrink-0">
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attended</span>
                           <span className="text-sm font-black text-slate-700">
@@ -360,7 +360,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                           </span>
                         </div>
                         
-                        <div className="flex flex-col items-end gap-2 w-16 border-l border-slate-100 pl-5">
+                        <div className="flex flex-col items-end gap-2 w-16 border-l border-slate-100 pl-3 sm:pl-5">
                           <span className={`text-lg font-black tracking-tight ${
                             s.presentPct >= 75 ? 'text-emerald-500' :
                             s.presentPct >= 50 ? 'text-amber-500' : 'text-rose-500'

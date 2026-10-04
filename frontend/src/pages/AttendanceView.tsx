@@ -311,11 +311,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     const totalCount = targetMembers.length;
 
     return (
-      <div className="flex flex-col h-full max-h-[calc(100vh-100px)] animate-in fade-in slide-in-from-right-4 duration-300">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm mb-4 shrink-0">
+      <div className="flex flex-col md:h-full md:max-h-[calc(100vh-100px)] animate-in fade-in slide-in-from-right-4 duration-300">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm mb-4 shrink-0">
           <div className="flex flex-col gap-5">
             {/* Top Row: Info & Stats */}
-            <div className="flex items-start gap-4">
+            <div className="flex flex-wrap items-start gap-3 sm:gap-4">
               <button 
                 onClick={() => setActiveSession(null)}
                 className="p-2 -ml-2 mt-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
@@ -323,7 +323,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 <ChevronLeft className="w-5 h-5" />
               </button>
               
-              <div className="flex-1">
+              <div className="flex-1 min-w-[200px]">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2">
                   <span className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-md text-[10px] font-bold tracking-wider uppercase">
                     {activeSession.team.split(',').join(', ')}
@@ -341,10 +341,10 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     {totalCount} Target Members
                   </span>
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900 leading-tight">{activeSession.title}</h2>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 leading-tight break-words">{activeSession.title}</h2>
               </div>
               
-              <div className="flex gap-3 items-start shrink-0">
+              <div className="flex gap-2 sm:gap-3 items-start shrink-0 ml-auto">
                 <button
                   onClick={() => openDeleteSession(activeSession)}
                   title="Delete session"
@@ -352,11 +352,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
-                <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 text-center min-w-[80px]">
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-center min-w-[68px] sm:min-w-[80px]">
                   <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-0.5">Present</p>
                   <p className="text-2xl font-black text-emerald-700 leading-none">{presentCount}</p>
                 </div>
-                <div className="bg-rose-50 border border-rose-100 rounded-xl px-4 py-2.5 text-center min-w-[80px]">
+                <div className="bg-rose-50 border border-rose-100 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-center min-w-[68px] sm:min-w-[80px]">
                   <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider mb-0.5">Absent</p>
                   <p className="text-2xl font-black text-rose-700 leading-none">{absentCount}</p>
                 </div>
@@ -364,7 +364,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
             </div>
 
             {/* Bottom Row: Remarks & Search */}
-            <div className="flex flex-col lg:flex-row gap-4 ml-11">
+            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 sm:ml-11">
               <div className="flex-1">
                 <textarea 
                   placeholder="Add session remarks here... (e.g. Special instructions, delays)"
@@ -397,11 +397,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
             <table className="w-full text-left border-collapse">
               <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Member</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    <div className="flex items-center justify-center gap-4">
-                      <span>Mark Attendance (Click Present to toggle)</span>
+                  <th className="px-3 sm:px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Member</th>
+                  <th className="hidden sm:table-cell px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
+                  <th className="px-3 sm:px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    <div className="flex flex-col sm:flex-row items-end sm:items-center justify-center gap-2 sm:gap-4">
+                      <span className="hidden md:inline">Mark Attendance (Click Present to toggle)</span>
                       <div className="flex items-center gap-2">
                         <button onClick={() => handleBulkMark('PRESENT')} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100 transition-colors cursor-pointer text-xs font-semibold">All Present</button>
                         <button onClick={() => handleBulkMark('ABSENT')} className="px-2 py-1 bg-rose-50 text-rose-600 rounded hover:bg-rose-100 transition-colors cursor-pointer text-xs font-semibold">All Absent</button>
@@ -415,44 +415,44 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                   const status = activeSession.records[m.id]?.status || 'ABSENT';
                   return (
                     <tr key={m.id} className="hover:bg-slate-50/50">
-                      <td className="px-6 py-3 whitespace-nowrap">
+                      <td className="px-3 sm:px-6 py-3 sm:whitespace-nowrap">
                         <p className="font-medium text-slate-900">{m.name}</p>
-                        <p className="text-xs text-slate-500">{m.rollNo || 'No Roll No'}</p>
+                        <p className="text-xs text-slate-500">{m.rollNo || 'No Roll No'}<span className="sm:hidden"> · {m.role}</span></p>
                       </td>
-                      <td className="px-6 py-3 whitespace-nowrap">
+                      <td className="hidden sm:table-cell px-6 py-3 whitespace-nowrap">
                         <span className="text-xs font-medium px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg">{m.role}</span>
                       </td>
-                      <td className="px-6 py-3 whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-2">
+                      <td className="px-3 sm:px-6 py-3 whitespace-nowrap">
+                        <div className="flex items-center justify-end sm:justify-center gap-1.5 sm:gap-2">
                           <button 
                             onClick={() => handleMarkAttendance(m.id, status === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                               status === 'PRESENT' 
                                 ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
                                 : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'
                             }`}
                           >
-                            <Check className="w-3.5 h-3.5" /> Present
+                            <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Present</span>
                           </button>
                           <button 
                             onClick={() => handleMarkAttendance(m.id, 'ABSENT')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                               status === 'ABSENT' 
                                 ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20' 
                                 : 'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600'
                             }`}
                           >
-                            <X className="w-3.5 h-3.5" /> Absent
+                            <X className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Absent</span>
                           </button>
                           <button 
                             onClick={() => handleMarkAttendance(m.id, 'INFORMED')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                               status === 'INFORMED' 
                                 ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' 
                                 : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'
                             }`}
                           >
-                            <FileText className="w-3.5 h-3.5" /> Informed
+                            <FileText className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Informed</span>
                           </button>
                         </div>
                       </td>
@@ -469,7 +469,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   }
 
   return (
-    <div className="flex flex-col gap-5 h-full max-h-[calc(100vh-100px)] animate-in fade-in duration-500 overflow-y-auto pb-8">
+    <div className="flex flex-col gap-5 md:h-full md:max-h-[calc(100vh-100px)] animate-in fade-in duration-500 md:overflow-y-auto pb-8">
       {/* ── Last 3 Sessions Absentees Section ── */}
       <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs shrink-0">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
@@ -601,17 +601,17 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
       </section>
 
       {/* ── Main Sessions List Header ── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-slate-900">Recent Sessions</h2>
-        <div className="flex items-center gap-4">
-          <div className="relative">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
               type="text" 
               placeholder="Search sessions..." 
               value={sessionSearchQuery}
               onChange={(e) => setSessionSearchQuery(e.target.value)}
-              className="w-64 pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-blue-400 focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+              className="w-full sm:w-64 pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:border-blue-400 focus:ring-4 focus:ring-blue-50 outline-none transition-all"
             />
             {sessionSearchQuery && (
               <button onClick={() => setSessionSearchQuery('')} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -621,10 +621,10 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           </div>
           <button 
             onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors shadow-sm shadow-blue-600/20 flex items-center gap-2 text-sm cursor-pointer"
+            className="shrink-0 px-3 sm:px-4 py-2.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors shadow-sm shadow-blue-600/20 flex items-center gap-2 text-sm cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            New Session
+            <span className="hidden sm:inline">New Session</span><span className="sm:hidden">New</span>
           </button>
         </div>
       </div>
@@ -733,7 +733,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90dvh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-900">Create New Session</h2>
               <button 
@@ -743,7 +743,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleCreateSession} className="p-6 space-y-4">
+            <form onSubmit={handleCreateSession} className="p-5 sm:p-6 space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">Session Title</label>
                 <input 
