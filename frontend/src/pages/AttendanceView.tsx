@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Clock, Users, ArrowRight, ChevronLeft, Check, X, FileText, Search, UserX, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, Plus, Clock, Users, ArrowRight, ChevronLeft, Check, X, FileText, Search, UserX, ChevronDown, ChevronUp, Trash2, AlertCircle } from 'lucide-react';
 import type { Member } from './AdminDashboard';
 
 type AttendanceSession = {
@@ -52,6 +52,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   const [recentAbsentees, setRecentAbsentees] = useState<RecentAbsenteeSession[]>([]);
   const [absenteesLoading, setAbsenteesLoading] = useState(true);
   const [expandedSessionIds, setExpandedSessionIds] = useState<Record<string, boolean>>({});
+
+  // Delete session (confirmation dialog)
+  const [deletingSession, setDeletingSession] = useState<AttendanceSession | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [createForm, setCreateForm] = useState({
     title: '', date: new Date().toISOString().split('T')[0], startTime: '09:00', endTime: '', sessionSlot: 'FN', team: 'ALL'
@@ -206,6 +211,80 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     }
   };
 
+  const openDeleteSession = (session: AttendanceSession) => {
+    setDeleteError(null);
+    setDeletingSession(session);
+  };
+
+  // DELETE /api/sessions/:id — also removes the session's attendance marks
+  const handleDeleteSession = async () => {
+    if (!deletingSession) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/sessions/${deletingSession.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (!res.ok && res.status !== 404) {
+        const text = await res.text();
+        let message = `Delete failed (${res.status})`;
+        try { message = JSON.parse(text).error || message; } catch { /* not JSON */ }
+        setDeleteError(message);
+        return;
+      }
+      // 404 means it was already gone; treat as deleted
+      setSessions(prev => prev.filter(s => s.id !== deletingSession.id));
+      if (activeSession?.id === deletingSession.id) setActiveSession(null);
+      setDeletingSession(null);
+      fetchRecentAbsentees();
+    } catch (err) {
+      console.error('Network error deleting session:', err);
+      setDeleteError('Network error, could not delete the session');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const deleteDialog = deletingSession && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
+        <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
+          <Trash2 className="w-5 h-5" />
+        </div>
+        <h3 className="text-base font-bold text-slate-900">Delete this session?</h3>
+        <p className="text-sm text-slate-500 mt-1.5">
+          <span className="font-semibold text-slate-700">{deletingSession.title}</span> ({deletingSession.team.split(',').join(', ')}) on {deletingSession.date}
+          {Object.keys(deletingSession.records || {}).length > 0 &&
+            ` and its ${Object.keys(deletingSession.records || {}).length} attendance mark(s)`}{' '}
+          will be removed permanently.
+        </p>
+        {deleteError && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{deleteError}</span>
+          </div>
+        )}
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={() => setDeletingSession(null)}
+            disabled={deleteBusy}
+            className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleDeleteSession}
+            disabled={deleteBusy}
+            className="flex-1 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl transition-colors shadow-sm shadow-rose-600/20 disabled:opacity-50 cursor-pointer"
+          >
+            {deleteBusy ? 'Deleting...' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (activeSession) {
     let targetMembers = activeSession.team === 'ALL' 
       ? members 
@@ -266,6 +345,13 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               </div>
               
               <div className="flex gap-3 items-start shrink-0">
+                <button
+                  onClick={() => openDeleteSession(activeSession)}
+                  title="Delete session"
+                  className="p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
                 <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 text-center min-w-[80px]">
                   <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-0.5">Present</p>
                   <p className="text-2xl font-black text-emerald-700 leading-none">{presentCount}</p>
@@ -377,6 +463,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
             </table>
           </div>
         </div>
+        {deleteDialog}
       </div>
     );
   }
@@ -594,8 +681,18 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                       {session.title}
                     </h3>
                   </div>
-                  <div className="bg-blue-50 text-blue-600 p-2 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                    <ArrowRight className="w-4 h-4" />
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openDeleteSession(session); }}
+                      title="Delete session"
+                      aria-label={`Delete ${session.title}`}
+                      className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <div className="bg-blue-50 text-blue-600 p-2 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
                   </div>
                 </div>
                 
@@ -765,6 +862,8 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           </div>
         </div>
       )}
+
+      {deleteDialog}
     </div>
   );
 }
