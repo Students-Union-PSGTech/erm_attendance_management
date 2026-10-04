@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import type { User } from '../types';
 import {
-  Users, Calendar, BarChart2, Settings,
-  TrendingUp, UserCheck, UserX, Activity,
+  Users, Calendar, BarChart2,
   LogOut, Grid3X3, ArrowUpDown, ArrowDown, ArrowUp, RefreshCw,
-  Search, Filter, X, Minus, Plus, Check, Edit3, Eye
+  Search, Filter, X, Minus, Plus, Edit3, Eye, Menu
 } from 'lucide-react';
 import AttendanceView from './AttendanceView';
 import ReportsView from './ReportsView';
@@ -50,6 +49,7 @@ const avatarColor = (name: string) => {
 
 export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
   const [activeNav, setActiveNav] = useState<NavKey>('Overview');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortConfigs, setSortConfigs] = useState<{ key: keyof Member; direction: 'asc' | 'desc' }[]>([]);
@@ -252,19 +252,41 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   return (
     <div className="flex h-screen bg-[#F7F8FC] overflow-hidden text-slate-900">
 
+      {/* ── Mobile/Overlay Backdrop ── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-xs transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* ── Sidebar ── */}
-      <aside className="w-60 flex flex-col bg-white border-r border-slate-100 py-6 px-3 shrink-0">
+      <aside
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-white border-r border-slate-100 py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${
+          sidebarOpen
+            ? 'w-60 translate-x-0 opacity-100 shadow-xl md:shadow-none'
+            : 'w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden opacity-0 p-0 border-0 pointer-events-none'
+        }`}
+      >
         {/* Brand */}
         <div className="flex items-center gap-2.5 px-3 mb-8">
           <img
             src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
             alt="Logo"
-            className="w-9 h-9 rounded-xl object-cover"
+            className="w-9 h-9 rounded-xl object-cover shrink-0"
           />
-          <div>
-            <p className="text-slate-900 font-semibold text-sm leading-tight">Students Union</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-slate-900 font-semibold text-sm leading-tight truncate">Students Union</p>
             <p className="text-slate-400 text-[10px]">Admin Portal</p>
           </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer shrink-0"
+            title="Close sidebar"
+            aria-label="Close sidebar"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Nav */}
@@ -272,7 +294,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           {NAV.map(({ icon: Icon, label }) => (
             <button
               key={label}
-              onClick={() => setActiveNav(label)}
+              onClick={() => {
+                setActiveNav(label);
+                if (window.innerWidth < 768) setSidebarOpen(false);
+              }}
               className={`nav-item ${activeNav === label ? 'nav-active' : ''}`}
             >
               <Icon className="w-4 h-4 shrink-0" />
@@ -319,12 +344,22 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto px-8 py-7">
-          <div className="mb-6">
-            <h1 className="text-xl font-bold text-slate-900">{activeNav}</h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </p>
+        <main className="flex-1 overflow-y-auto px-6 md:px-8 py-7">
+          <div className="flex items-center gap-3.5 mb-6">
+            <button
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              className="p-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-blue-600 rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center shrink-0"
+              title={sidebarOpen ? 'Close navigation' : 'Open navigation'}
+              aria-label="Toggle navigation menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900">{activeNav}</h1>
+              <p className="text-sm text-slate-500 mt-0.5">
+                {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            </div>
           </div>
 
           {activeNav === 'Overview' && (

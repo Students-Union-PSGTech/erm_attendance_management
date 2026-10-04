@@ -14,7 +14,6 @@ import {
   UserX,
   Clock,
   Menu,
-  ChevronRight,
   AlertCircle,
   Eye,
   Edit3,
@@ -24,10 +23,11 @@ import {
   Trash2,
   Check,
   FileText,
-  RotateCcw,
   ArrowUp,
   ArrowRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   ArrowDown,
   ArrowUpDown,
   Minus
@@ -141,18 +141,31 @@ const avatarColor = (name: string) => {
   return colors[name.charCodeAt(0) % colors.length];
 };
 
+const sortSessions = (list: AttendanceSession[]) =>
+  [...list].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    const aTime = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : 0;
+    const bTime = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : 0;
+    if (aTime !== bTime) return bTime - aTime;
+    return (b.startTime || '').localeCompare(a.startTime || '');
+  });
+
 export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const teamName = user.team || 'TECH';
   const [activeNav, setActiveNav] = useState<NavKey>('Overview');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Core data states
   const [members, setMembers] = useState<Member[]>([]);
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
-  const [statsSummary, setStatsSummary] = useState<StatsSummary | null>(null);
   const [attendanceStats, setAttendanceStats] = useState<MemberAttendanceStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Recent Absentees for Last 3 Sessions
+  const [recentAbsentees, setRecentAbsentees] = useState<any[]>([]);
+  const [absenteesLoading, setAbsenteesLoading] = useState(true);
+  const [expandedSessionIds, setExpandedSessionIds] = useState<Record<string, boolean>>({});
 
   // Members View Filters & Search
   const [searchMemberQuery, setSearchMemberQuery] = useState('');
@@ -192,14 +205,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     );
   };
 
-
   // Meetings View Filters
   const [searchMeetingQuery, setSearchMeetingQuery] = useState('');
-  const [filterMeetingSlot, setFilterMeetingSlot] = useState('ALL');
 
-  // Attendance View Selected Session & Filter
+  // Attendance View Selected Session
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
-  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('ALL');
 
   // Member History Modal
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -242,8 +252,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const [markingIds, setMarkingIds] = useState<Set<string>>(new Set());
   const [bulkMarking, setBulkMarking] = useState(false);
 
-  // Change own login (username / password)
-  const [loginName, setLoginName] = useState(user.username);
+  // User login name
+  const loginName = user.username;
 
   // Short-lived message for actions (marking, deleting...)
   const [actionMessage, setActionMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -265,6 +275,23 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     };
   };
 
+  const fetchRecentAbsentees = async () => {
+    setAbsenteesLoading(true);
+    try {
+      const res = await fetch('/api/sessions/recent-absentees', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRecentAbsentees(data.sessions || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recent absentees:', err);
+    } finally {
+      setAbsenteesLoading(false);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     setError(null);
@@ -273,10 +300,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     const headers = { Authorization: `Bearer ${token}` };
 
     try {
-      const [membersRes, sessionsRes, summaryRes, statsRes] = await Promise.all([
+      const [membersRes, sessionsRes, statsRes] = await Promise.all([
         fetch('/api/members', { headers }),
         fetch('/api/sessions', { headers }),
-        fetch('/api/stats/summary', { headers }),
         fetch('/api/stats/attendance', { headers }),
       ]);
 
@@ -299,14 +325,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         const teamSessions = (data.sessions || []).filter(
           (s: AttendanceSession) => s.team === 'ALL' || s.team.split(',').map((t) => t.trim()).includes(teamName)
         );
-        setSessions(teamSessions);
-      }
-
-      // Parse summary
-      if (summaryRes.ok) {
-        const text = await summaryRes.text();
-        const data = text ? JSON.parse(text) : {};
-        setStatsSummary(data);
+        setSessions(sortSessions(teamSessions));
       }
 
       // Parse attendance stats
@@ -318,6 +337,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         );
         setAttendanceStats(teamStats);
       }
+
+      fetchRecentAbsentees();
     } catch (err: any) {
       console.error('Error fetching team data:', err);
       setError(err.message || 'Unable to connect to backend server');
@@ -384,17 +405,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       return 0;
     });
   }, [filteredMembers, sortConfigs]);
-  // Filtered meetings for Meetings tab
-  const filteredMeetings = useMemo(() => {
-    return sessions.filter((s) => {
-      if (filterMeetingSlot !== 'ALL' && s.sessionSlot !== filterMeetingSlot) return false;
-      if (searchMeetingQuery) {
-        const q = searchMeetingQuery.toLowerCase();
-        return s.title.toLowerCase().includes(q) || s.date.includes(q);
-      }
-      return true;
-    });
-  }, [sessions, filterMeetingSlot, searchMeetingQuery]);
+
 
   // Selected session for Attendance tab
   const activeSession = useMemo(() => {
@@ -403,26 +414,23 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   // Attendance breakdown for active session
   const activeSessionStats = useMemo(() => {
-    if (!activeSession || !activeSession.records) {
-      return { present: 0, absent: 0, informed: 0, unmarked: members.length, total: members.length };
+    if (!activeSession) {
+      return { present: 0, absent: members.length, informed: 0, unmarked: 0, total: members.length };
     }
-    const memberIds = new Set(members.map((m) => m.id));
+    const recs = activeSession.records || {};
     let present = 0;
     let absent = 0;
     let informed = 0;
-    let marked = 0;
 
-    Object.entries(activeSession.records).forEach(([id, rec]) => {
-      if (memberIds.has(id)) {
-        marked++;
-        if (rec.status === 'PRESENT') present++;
-        else if (rec.status === 'ABSENT') absent++;
-        else if (rec.status === 'INFORMED') informed++;
-      }
+    members.forEach((m) => {
+      const rec = recs[m.id];
+      const status = rec ? rec.status : 'ABSENT';
+      if (status === 'PRESENT') present++;
+      else if (status === 'INFORMED') informed++;
+      else absent++;
     });
 
-    const unmarked = Math.max(0, members.length - marked);
-    return { present, absent, informed, unmarked, total: members.length };
+    return { present, absent, informed, unmarked: 0, total: members.length };
   }, [activeSession, members]);
 
   // Members list with status for active session
@@ -430,16 +438,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     if (!activeSession) return [];
     const records = activeSession.records || {};
 
-    let targetMembers = [...members].sort((a, b) => {
-      const aMarked = !!records[a.id]?.status;
-      const bMarked = !!records[b.id]?.status;
-      if (aMarked !== bMarked) return aMarked ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    });
+    let targetMembers = [...members].sort((a, b) => a.name.localeCompare(b.name));
 
-    const list = targetMembers.map((m) => {
+    return targetMembers.map((m) => {
       const rec = records[m.id];
-      const status: 'PRESENT' | 'ABSENT' | 'INFORMED' | 'UNMARKED' = rec ? rec.status : 'UNMARKED';
+      const status: 'PRESENT' | 'ABSENT' | 'INFORMED' = rec ? (rec.status as any) : 'ABSENT';
       return {
         ...m,
         status,
@@ -447,10 +450,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         notes: rec?.notes,
       };
     });
-
-    if (attendanceStatusFilter === 'ALL') return list;
-    return list.filter((m) => m.status === attendanceStatusFilter);
-  }, [activeSession, members, attendanceStatusFilter]);
+  }, [activeSession, members]);
 
   // Member History Handler
   const handleOpenHistory = async (member: Member) => {
@@ -563,28 +563,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     return data?.error || `Request failed (${status})`;
   };
 
-  const sortSessions = (list: AttendanceSession[]) =>
-    [...list].sort((a, b) =>
-      a.date === b.date ? (b.startTime || '').localeCompare(a.startTime || '') : b.date.localeCompare(a.date),
-    );
+
 
   const openCreateMeeting = () => {
     setEditingMeeting(null);
     setMeetingForm(emptyMeetingForm());
-    setMeetingError(null);
-    setMeetingModalOpen(true);
-  };
-
-  const openEditMeeting = (s: AttendanceSession) => {
-    setEditingMeeting(s);
-    setMeetingForm({
-      title: s.title,
-      date: s.date,
-      startTime: s.startTime || '09:00',
-      endTime: s.endTime || '',
-      sessionSlot: s.sessionSlot || 'FN',
-      notes: s.notes || '',
-    });
     setMeetingError(null);
     setMeetingModalOpen(true);
   };
@@ -790,34 +773,39 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   return (
     <div className="flex h-screen bg-[#F7F8FC] overflow-hidden text-slate-900">
       {/* ── Mobile Sidebar Backdrop ── */}
-      {mobileMenuOpen && (
+      {sidebarOpen && (
         <div
           className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-xs transition-opacity"
-          onClick={() => setMobileMenuOpen(false)}
+          onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-60 flex flex-col bg-white border-r border-slate-100 py-6 px-3 shrink-0 transform transition-transform duration-200 ease-in-out md:translate-x-0 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-white border-r border-slate-100 py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${
+          sidebarOpen
+            ? 'w-60 translate-x-0 opacity-100 shadow-xl md:shadow-none'
+            : 'w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden opacity-0 p-0 border-0 pointer-events-none'
+        }`}
       >
         {/* Brand */}
         <div className="flex items-center gap-2.5 px-3 mb-8">
           <img
             src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
             alt="Logo"
-            className="w-9 h-9 rounded-xl object-cover shadow-xs"
+            className="w-9 h-9 rounded-xl object-cover shadow-xs shrink-0"
           />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-slate-900 font-semibold text-sm leading-tight truncate">Students Union</p>
             <p className="text-indigo-600 font-medium text-[10px] tracking-wide uppercase">
               {teamName} Team Portal
             </p>
           </div>
           <button
-            onClick={() => setMobileMenuOpen(false)}
-            className="md:hidden ml-auto p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+            onClick={() => setSidebarOpen(false)}
+            className="ml-auto p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer shrink-0"
+            title="Close sidebar"
+            aria-label="Close sidebar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -832,7 +820,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 key={label}
                 onClick={() => {
                   setActiveNav(label);
-                  setMobileMenuOpen(false);
+                  if (window.innerWidth < 768) setSidebarOpen(false);
                 }}
                 className={`nav-item ${isActive ? 'nav-active' : ''}`}
               >
@@ -880,29 +868,18 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
       {/* ── Main Area ── */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Top Mobile Bar */}
-        <div className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-100">
-          <button
-            onClick={() => setMobileMenuOpen(true)}
-            className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-800">Students Union</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-              {teamName}
-            </span>
-          </div>
-          <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500">
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-
         {/* Content Container */}
         <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-7">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3.5 mb-6">
+            <button
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              className="p-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-indigo-600 rounded-xl transition-all shadow-xs cursor-pointer flex items-center justify-center shrink-0"
+              title={sidebarOpen ? 'Close navigation' : 'Open navigation'}
+              aria-label="Toggle navigation menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <div>
               <div className="flex items-center gap-2.5">
                 <h1 className="text-xl font-bold text-slate-900">{activeNav}</h1>
@@ -919,8 +896,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 })}
               </p>
             </div>
-
-
           </div>
 
           {/* Error Banner */}
@@ -1273,6 +1248,133 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             <div className="flex flex-col gap-4 h-full max-h-[calc(100vh-100px)] animate-in fade-in duration-500">
               {!activeSession ? (
                 <>
+                  {/* ── Last 3 Sessions Absentees Section ── */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs mb-4">
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                          <UserX className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-bold text-slate-900">Last 3 Sessions Absentees</h3>
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
+                              {recentAbsentees.length} {recentAbsentees.length === 1 ? 'session' : 'sessions'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Overview of absent members across the three most recent attendance sessions
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {absenteesLoading ? (
+                      <div className="py-8 flex items-center justify-center">
+                        <div className="w-6 h-6 border-2 border-rose-600 border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                    ) : recentAbsentees.length === 0 ? (
+                      <div className="py-8 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                        <UserX className="w-8 h-8 mx-auto mb-2 text-slate-400 opacity-60" />
+                        <p className="text-sm font-semibold text-slate-700">No previous sessions available.</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Absentees will automatically be displayed here once sessions are recorded.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {recentAbsentees.map((s) => {
+                          const isExpanded = expandedSessionIds[s.id] ?? true;
+                          return (
+                            <div 
+                              key={s.id}
+                              className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 flex flex-col justify-between hover:border-slate-300 transition-all shadow-2xs"
+                            >
+                              <div>
+                                <div className="flex items-start justify-between gap-2 mb-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                                      <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 rounded text-[10px] font-bold tracking-wider uppercase">
+                                        {s.team.split(',').join(', ')}
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
+                                        s.sessionSlot === 'FN' ? 'bg-amber-100 text-amber-800' :
+                                        s.sessionSlot === 'AN' ? 'bg-orange-100 text-orange-800' :
+                                        'bg-indigo-100 text-indigo-800'
+                                      }`}>
+                                        {s.sessionSlot}
+                                      </span>
+                                    </div>
+                                    <h4 className="font-bold text-slate-900 text-sm leading-snug line-clamp-1" title={s.title}>
+                                      {s.title}
+                                    </h4>
+                                  </div>
+                                  <span className="px-2.5 py-1 bg-rose-100 text-rose-800 font-bold rounded-lg text-xs whitespace-nowrap shrink-0">
+                                    {s.absentCount} {s.absentCount === 1 ? 'Absent' : 'Absent'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
+                                  <span className="flex items-center gap-1 font-medium">
+                                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                    {s.date}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                    {s.startTime} {s.endTime ? `- ${s.endTime}` : ''}
+                                  </span>
+                                </div>
+
+                                <div className="mb-3">
+                                  <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1.5">
+                                    <span>Absentee List ({s.absentees.length})</span>
+                                    <button 
+                                      onClick={() => setExpandedSessionIds(prev => ({ ...prev, [s.id]: !isExpanded }))}
+                                      className="text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer flex items-center gap-0.5"
+                                    >
+                                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                      {isExpanded ? 'Hide' : 'Show'}
+                                    </button>
+                                  </div>
+
+                                  {isExpanded && (
+                                    s.absentees.length === 0 ? (
+                                      <div className="bg-emerald-50 border border-emerald-200/80 rounded-lg p-2.5 text-center text-xs text-emerald-800 font-medium">
+                                        🎉 100% Attendance — Zero Absentees!
+                                      </div>
+                                    ) : (
+                                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-lg border border-slate-200 bg-white p-2">
+                                        {s.absentees.map((ab: any) => (
+                                          <div key={ab.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded hover:bg-slate-50">
+                                            <div className="min-w-0 flex-1 pr-2">
+                                              <p className="font-semibold text-slate-800 truncate">{ab.name}</p>
+                                              <p className="text-[10px] text-slate-400 truncate">{ab.rollNo || ab.department || 'No Roll No'}</p>
+                                            </div>
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium shrink-0">
+                                              {ab.team}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() => setSelectedSessionId(s.id)}
+                                className="w-full mt-2 py-2 px-3 bg-white hover:bg-slate-100 text-slate-700 hover:text-indigo-600 border border-slate-200 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                              >
+                                View & Manage Session
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <h2 className="text-xl font-bold text-slate-900">Recent Sessions</h2>
                     <div className="flex items-center gap-4">
@@ -1313,7 +1415,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {sessions.filter(s => {
+                      {sortSessions(sessions).filter(s => {
                         if (!searchMeetingQuery) return true;
                         const q = searchMeetingQuery.toLowerCase();
                         return s.title.toLowerCase().includes(q) || 
@@ -1444,7 +1546,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                     {/* Selected Session Stats Banner */}
                     {activeSession && (
-                      <div className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="pt-4 grid grid-cols-3 gap-3">
                         <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-100">
                           <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">
                             Present
@@ -1471,15 +1573,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             {activeSessionStats.informed}
                           </div>
                         </div>
-
-                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                            Unmarked
-                          </span>
-                          <div className="text-xl font-bold text-slate-700">
-                            {activeSessionStats.unmarked}
-                          </div>
-                        </div>
                       </div>
                     )}
                   </div>
@@ -1494,7 +1587,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
                             <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               <div className="flex items-center justify-center gap-4">
-                                <span>{canManage(activeSession) ? 'Mark Attendance' : 'Attendance Status'}</span>
+                                <span>{canManage(activeSession) ? 'Mark Attendance (Click Present to toggle)' : 'Attendance Status'}</span>
                                 {canManage(activeSession) && (
                                   <div className="flex items-center gap-2">
                                     <button onClick={() => handleBulkMark('PRESENT')} disabled={bulkMarking} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded hover:bg-emerald-100 transition-colors disabled:opacity-50">All Present</button>
@@ -1522,7 +1615,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     {canManage(activeSession) ? (
                                       <>
                                         <button 
-                                          onClick={() => markMember(activeSession, m.id, 'PRESENT')}
+                                          onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
+                                          disabled={markingIds.has(m.id)}
                                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             status === 'PRESENT' 
                                               ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
@@ -1533,6 +1627,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                         </button>
                                         <button 
                                           onClick={() => markMember(activeSession, m.id, 'ABSENT')}
+                                          disabled={markingIds.has(m.id)}
                                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             status === 'ABSENT' 
                                               ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20' 
@@ -1543,6 +1638,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                         </button>
                                         <button 
                                           onClick={() => markMember(activeSession, m.id, 'INFORMED')}
+                                          disabled={markingIds.has(m.id)}
                                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             status === 'INFORMED' 
                                               ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20' 
@@ -1556,10 +1652,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                       <span className={`px-4 py-1.5 rounded-xl text-xs font-bold ${
                                         status === 'PRESENT' ? 'bg-emerald-100 text-emerald-700' :
                                         status === 'ABSENT' ? 'bg-rose-100 text-rose-700' :
-                                        status === 'INFORMED' ? 'bg-blue-100 text-blue-700' :
-                                        'bg-slate-100 text-slate-500'
+                                        'bg-blue-100 text-blue-700'
                                       }`}>
-                                        {status === 'UNMARKED' ? 'Unmarked' : status.charAt(0) + status.slice(1).toLowerCase()}
+                                        {status.charAt(0) + status.slice(1).toLowerCase()}
                                       </span>
                                     )}
                                   </div>
