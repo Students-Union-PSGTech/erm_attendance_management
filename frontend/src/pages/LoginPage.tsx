@@ -55,7 +55,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center px-4 py-12 select-none overflow-hidden bg-[#0B0813]">
+    <div className="relative min-h-screen flex flex-col items-center justify-center px-4 py-12 select-none overflow-hidden bg-[#050B14]">
       {/* React Bits Living Topography Background */}
       <TopographyBackground />
 
@@ -69,21 +69,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           className="flex flex-col items-center mb-6 text-center"
         >
           <div className="relative mb-3">
-            <div className="w-16 h-16 rounded-lg p-0.5 bg-gradient-to-tr from-purple-600 via-pink-400 to-indigo-500 shadow-[0_0_30px_rgba(147,51,234,0.4)]">
+            <div className="w-16 h-16 rounded-lg p-0.5 bg-gradient-to-tr from-sky-600 via-cyan-400 to-blue-500 shadow-[0_0_30px_rgba(14,165,233,0.5)]">
               <img
                 src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
                 alt="Students Union"
                 className="w-full h-full object-cover rounded-[6px]"
               />
             </div>
-            <span className="badge-reactbits-new absolute -top-2 -right-3">
-              ERM
-            </span>
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
             Students Union
           </h1>
-          <p className="text-xs text-[#9490A6] mt-1 font-medium">
+          <p className="text-xs text-[#94A3B8] mt-1 font-medium">
             Attendance Tracking & Analytics System
           </p>
         </motion.div>
@@ -98,9 +95,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <div className="flex items-center justify-between pb-4 mb-5 border-b border-white/[0.08]">
             <div>
               <h2 className="text-base font-bold text-white tracking-tight">Portal Authentication</h2>
-              <p className="text-xs text-[#9490A6] mt-0.5">Enter your credentials to access</p>
+              <p className="text-xs text-[#94A3B8] mt-0.5">Enter your credentials to access</p>
             </div>
-            <div className="w-8 h-8 rounded-md bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+            <div className="w-8 h-8 rounded-md bg-sky-500/10 border border-sky-500/25 flex items-center justify-center text-sky-400">
               <Shield className="w-4 h-4" />
             </div>
           </div>
@@ -170,11 +167,11 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </motion.div>
             )}
 
-            {/* Submit Button (React Bits Glowing Purple) */}
+            {/* Submit Button (React Bits Glowing Sky) */}
             <button
               type="submit"
               disabled={loading}
-              className="btn-purple-glow w-full flex items-center justify-center gap-2 py-2.5 mt-2 text-sm font-semibold cursor-pointer disabled:opacity-60"
+              className="btn-sky-glow w-full flex items-center justify-center gap-2 py-2.5 mt-2 text-sm font-semibold cursor-pointer disabled:opacity-60"
             >
               {loading ? (
                 <span className="flex items-center gap-2">

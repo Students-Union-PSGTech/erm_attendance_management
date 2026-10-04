@@ -30,6 +30,7 @@ type SessionStat = {
   absent: number;
   informed: number;
   marked: number;
+  targetCount: number;
   presentPct: number;
 };
 
@@ -68,16 +69,22 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 else if (r.status === 'INFORMED') informed++;
               });
             }
-            const marked = present + absent + informed;
+            const teams = (s.team || 'ALL').split(',').map((t: string) => t.trim().toUpperCase());
+            const targetMembers = (s.team === 'ALL' || teams.includes('ALL'))
+              ? members
+              : members.filter((m: any) => teams.includes(m.team?.toUpperCase() || ''));
+            const targetCount = targetMembers.length > 0 ? targetMembers.length : Math.max(present + absent + informed, 1);
+            const presentPct = Math.round((present / targetCount) * 1000) / 10;
             return {
               id: s.id,
               date: s.date,
               title: s.title,
+              team: s.team || 'ALL',
               present,
               absent,
               informed,
-              marked,
-              presentPct: marked === 0 ? 0 : Math.round((present / marked) * 1000) / 10
+              targetCount,
+              presentPct
             };
           });
           setSessionStats(computedStats);
@@ -90,7 +97,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
     };
 
     fetchStats();
-  }, []);
+  }, [members]);
 
   const downloadMembersPDF = () => {
     if (!members.length) return;
@@ -158,7 +165,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin shadow-lg shadow-purple-500/20"></div>
+        <div className="w-10 h-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin shadow-lg shadow-sky-500/20"></div>
       </div>
     );
   }
@@ -167,12 +174,12 @@ export default function ReportsView({ members }: ReportsViewProps) {
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-8 duration-700 pb-12 text-slate-100">
 
       {/* Tab Navigation */}
-      <div className="rect-card p-1.5 flex gap-1 rounded-md w-full max-w-fit self-center border border-white/10 bg-[#120F1D]/80 backdrop-blur-xl">
+      <div className="rect-card p-1.5 flex gap-1 rounded-md w-full max-w-fit self-center border border-white/10 bg-[#0B172B]/80 backdrop-blur-xl">
         <button
           onClick={() => setActiveTab('performance')}
           className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex-1 sm:flex-none cursor-pointer ${
             activeTab === 'performance'
-              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.35)]'
+              ? 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.35)]'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
         >
@@ -183,7 +190,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
           onClick={() => setActiveTab('stats')}
           className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex-1 sm:flex-none cursor-pointer ${
             activeTab === 'stats'
-              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.35)]'
+              ? 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.35)]'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
         >
@@ -194,7 +201,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
           onClick={() => setActiveTab('exports')}
           className={`flex items-center justify-center gap-2 px-5 sm:px-6 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all flex-1 sm:flex-none cursor-pointer ${
             activeTab === 'exports'
-              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(147,51,234,0.35)]'
+              ? 'bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.35)]'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
         >
@@ -207,14 +214,14 @@ export default function ReportsView({ members }: ReportsViewProps) {
         {activeTab === 'exports' && (
           <div className="rect-card-elevated p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h2 className="text-base font-bold text-white flex items-center gap-2 mb-2 tracking-wide uppercase">
-              <Download className="w-4 h-4 text-purple-400" />
+              <Download className="w-4 h-4 text-sky-400" />
               Data Exports & Reports
             </h2>
             <p className="text-xs text-slate-400 mb-6">Export detailed member and attendance reports in clean PDF format.</p>
             <div className="flex flex-col sm:flex-row gap-4">
               <button
                 onClick={downloadMembersPDF}
-                className="btn-purple-glow flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                className="btn-sky-glow flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
                 <Users className="w-4 h-4" />
                 Download Members PDF
@@ -235,7 +242,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
             <div className="p-5 border-b border-white/10 shrink-0 flex items-center justify-between bg-white/[0.02]">
               <div>
                 <h2 className="text-base font-bold text-white flex items-center gap-2.5 uppercase tracking-wide">
-                  <div className="p-1.5 bg-purple-950/60 text-purple-400 border border-purple-500/30 rounded-md">
+                  <div className="p-1.5 bg-sky-950/60 text-sky-400 border border-sky-500/30 rounded-md">
                     <CalendarDays className="w-4 h-4" />
                   </div>
                   Session Pulse
@@ -251,11 +258,11 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 sessionStats.map((d) => (
                   <div
                     key={d.id}
-                    className="rect-card p-4 flex items-center justify-between gap-3 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all duration-200"
+                    className="rect-card p-4 flex items-center justify-between gap-3 hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(14,165,233,0.12)] transition-all duration-200"
                   >
                     <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-12 h-12 rounded-md bg-[#1B1430] border border-purple-500/30 flex flex-col items-center justify-center shrink-0">
-                        <span className="text-[9px] font-bold text-purple-400 uppercase leading-none mb-0.5">
+                      <div className="w-12 h-12 rounded-md bg-[#0C1E38] border border-sky-500/30 flex flex-col items-center justify-center shrink-0">
+                        <span className="text-[9px] font-bold text-sky-400 uppercase leading-none mb-0.5">
                           {new Date(d.date).toLocaleDateString('en-US', { month: 'short' })}
                         </span>
                         <span className="text-lg font-black text-white leading-none font-mono">
@@ -266,7 +273,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                         <p className="font-semibold text-white text-sm truncate">{d.title}</p>
                         <p className="text-xs text-slate-400 font-mono mt-1 flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34D399]" />
-                          {d.present} of {d.marked} present
+                          {d.present} of {d.targetCount} present
                         </p>
                       </div>
                     </div>
@@ -318,11 +325,11 @@ export default function ReportsView({ members }: ReportsViewProps) {
                     className="rect-input w-full pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500"
                   />
                 </div>
-                <div className="flex items-center gap-1 bg-[#0A0713] p-1 rounded-md border border-white/10 shrink-0">
+                <div className="flex items-center gap-1 bg-[#050B14] p-1 rounded-md border border-white/10 shrink-0">
                   <button
                     onClick={() => setShowDefaulters(false)}
                     className={`px-3 py-1 rounded-sm text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                      !showDefaulters ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                      !showDefaulters ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     All Members
@@ -360,12 +367,12 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 return displayedMembers.map((s) => (
                   <div
                     key={s.memberId}
-                    className="rect-card p-4 flex items-center justify-between gap-3 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all duration-200"
+                    className="rect-card p-4 flex items-center justify-between gap-3 hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(14,165,233,0.12)] transition-all duration-200"
                   >
                     <div className="flex-1 min-w-0 pr-4">
                       <p className="font-semibold text-white truncate text-sm mb-1">{s.name}</p>
                       <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 text-[9px] font-bold uppercase tracking-wider rounded-sm font-mono">
+                        <span className="px-2 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 text-[9px] font-bold uppercase tracking-wider rounded-sm font-mono">
                           {s.team}
                         </span>
                         <span className="text-[11px] text-slate-400">{s.role}</span>

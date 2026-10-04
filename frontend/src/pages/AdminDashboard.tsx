@@ -4,7 +4,7 @@ import {
   Users, Calendar, BarChart2,
   LogOut, Grid3X3, ArrowUpDown, ArrowDown, ArrowUp, RefreshCw,
   Search, Filter, X, Minus, Plus, Edit3, Eye, Menu, ShieldCheck,
-  Activity, ArrowRight, Sparkles, UserX, ChevronRight
+  Activity, ArrowRight, Sparkles, UserX, ChevronRight, ChevronLeft
 } from 'lucide-react';
 import AttendanceView from './AttendanceView';
 import ReportsView from './ReportsView';
@@ -16,7 +16,7 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
-type NavKey = 'Overview' | 'Members' | 'Attendance' | 'Reports';
+type NavKey = 'Overview' | 'Members' | 'Attendance' | 'Reports' | 'Leads' | 'Coordinators' | 'Core';
 
 const NAV: { icon: React.ElementType; label: NavKey }[] = [
   { icon: Grid3X3, label: 'Overview' },
@@ -37,20 +37,64 @@ export type Member = {
 };
 
 const ROLE_STYLE: Record<string, string> = {
-  LEAD: 'bg-[#2E1848] text-[#D8B4FE] border border-purple-500/40',
-  'CO-LEAD': 'bg-[#1E1B4B] text-[#A5B4FC] border border-indigo-500/40',
+  LEAD: 'bg-[#082F49] text-[#7DD3FC] border border-sky-500/40',
+  'CO-LEAD': 'bg-[#0C4A6E] text-[#BAE6FD] border border-cyan-500/40',
   COORDINATOR: 'bg-[#064E3B] text-[#6EE7B7] border border-emerald-500/40',
-  CORE: 'bg-[#1E1E2E] text-[#CBD5E1] border border-white/10',
+  CORE: 'bg-[#0D1E36] text-[#CBD5E1] border border-white/10',
 };
 
 const avatarColor = (name: string) => {
-  const colors = ['#9333EA', '#7C3AED', '#2563EB', '#059669', '#DB2777', '#EA580C'];
+  const colors = ['#0EA5E9', '#0284C7', '#06B6D4', '#059669', '#38BDF8', '#2563EB'];
   return colors[name.charCodeAt(0) % colors.length];
 };
 
 export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
   const [activeNav, setActiveNav] = useState<NavKey>('Overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const navigateTo = (nav: NavKey, replace = false) => {
+    setActiveNav(nav);
+    const hash = `#${nav.toLowerCase()}`;
+    if (window.location.hash !== hash) {
+      if (replace) {
+        window.history.replaceState({ nav }, '', hash);
+      } else {
+        window.history.pushState({ nav }, '', hash);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const parseNav = (): NavKey => {
+      const h = window.location.hash.replace('#', '').toLowerCase();
+      const map: Record<string, NavKey> = {
+        overview: 'Overview',
+        members: 'Members',
+        attendance: 'Attendance',
+        reports: 'Reports',
+        leads: 'Leads',
+        coordinators: 'Coordinators',
+        core: 'Core',
+      };
+      return map[h] || 'Overview';
+    };
+
+    const initialNav = parseNav();
+    setActiveNav(initialNav);
+    window.history.replaceState({ nav: initialNav }, '', `#${initialNav.toLowerCase()}`);
+
+    const onPopState = (e: PopStateEvent) => {
+      if (e.state?.nav) {
+        setActiveNav(e.state.nav);
+      } else {
+        setActiveNav(parseNav());
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortConfigs, setSortConfigs] = useState<{ key: keyof Member; direction: 'asc' | 'desc' }[]>([]);
@@ -231,7 +275,16 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   const filteredMembers = members.filter(m => {
     const matchesTeam = filterTeam === 'ALL' || m.team === filterTeam;
-    const matchesRole = filterRole === 'ALL' || m.role === filterRole;
+    let matchesRole = true;
+    if (activeNav === 'Leads') {
+      matchesRole = m.role === 'LEAD' || m.role === 'CO-LEAD';
+    } else if (activeNav === 'Coordinators') {
+      matchesRole = m.role === 'COORDINATOR';
+    } else if (activeNav === 'Core') {
+      matchesRole = m.role === 'CORE';
+    } else {
+      matchesRole = filterRole === 'ALL' || m.role === filterRole;
+    }
     const matchesSearch =
       !searchQuery ||
       m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -260,14 +313,14 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     const config = sortConfigs[sortIndex];
     return (
       <div className="flex items-center ml-1">
-        {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-purple-400" /> : <ArrowDown className="w-3 h-3 text-purple-400" />}
-        {sortIndex > 0 && <span className="text-[9px] font-bold text-purple-400 ml-0.5">{sortIndex + 1}</span>}
+        {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-sky-400" /> : <ArrowDown className="w-3 h-3 text-sky-400" />}
+        {sortIndex > 0 && <span className="text-[9px] font-bold text-sky-400 ml-0.5">{sortIndex + 1}</span>}
       </div>
     );
   };
 
   return (
-    <div className="relative flex h-dvh bg-[#0B0813] overflow-hidden text-white select-none">
+    <div className="relative flex h-dvh bg-[#050B14] overflow-hidden text-white select-none">
       {/* ── React Bits Living Topography Background ── */}
       <TopographyBackground />
 
@@ -281,7 +334,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#100D1B]/95 backdrop-blur-2xl border-r border-white/[0.08] py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#081220]/95 backdrop-blur-2xl border-r border-white/[0.08] py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${
           sidebarOpen
             ? 'w-64 translate-x-0 opacity-100 shadow-2xl'
             : 'w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden opacity-0 p-0 border-0 pointer-events-none'
@@ -289,7 +342,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       >
         {/* Brand */}
         <div className="flex items-center gap-3 px-3 mb-8">
-          <div className="w-10 h-10 rounded-lg p-0.5 bg-gradient-to-tr from-purple-600 via-pink-400 to-indigo-500 shrink-0 shadow-[0_0_20px_rgba(147,51,234,0.4)]">
+          <div className="w-10 h-10 rounded-lg p-0.5 bg-gradient-to-tr from-sky-600 via-cyan-400 to-blue-500 shrink-0 shadow-[0_0_20px_rgba(14,165,233,0.5)]">
             <img
               src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
               alt="Logo"
@@ -299,9 +352,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="text-white font-bold text-sm leading-tight truncate">Students Union</p>
-              <span className="badge-reactbits-new">PRO</span>
             </div>
-            <p className="text-[#9490A6] text-[11px] mt-0.5">Admin Central</p>
+            <p className="text-[#94A3B8] text-[11px] mt-0.5">Admin Central</p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -320,15 +372,15 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               <button
                 key={label}
                 onClick={() => {
-                  setActiveNav(label);
+                  navigateTo(label);
                   if (window.innerWidth < 768) setSidebarOpen(false);
                 }}
                 className={`w-full nav-item-rect ${isActive ? 'nav-item-rect-active' : ''}`}
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-purple-400' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
                 <span className="flex-1 text-left">{label}</span>
                 {isActive && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_8px_#A855F7]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38BDF8]" />
                 )}
               </button>
             );
@@ -337,7 +389,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
         {/* User Card & Logout */}
         <div className="border-t border-white/[0.08] pt-4 mt-auto">
-          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-md bg-[#161226] border border-white/[0.06]">
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-md bg-[#0C1A30] border border-white/[0.06]">
             <div
               className="w-8 h-8 rounded-md flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-md"
               style={{ background: avatarColor(user.username) }}
@@ -346,7 +398,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold text-white truncate">{user.username}</p>
-              <p className="text-[10px] text-purple-300 font-medium">Administrator</p>
+              <p className="text-[10px] text-sky-300 font-medium">Administrator</p>
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -385,9 +437,19 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               >
                 <Menu className="w-5 h-5" />
               </button>
+              {['Leads', 'Coordinators', 'Core'].includes(activeNav) && (
+                <button
+                  onClick={() => navigateTo('Overview')}
+                  className="btn-rect-secondary px-3 py-2 text-xs font-mono inline-flex items-center gap-1.5 cursor-pointer"
+                  title="Back to Overview"
+                >
+                  <ChevronLeft className="w-4 h-4 text-sky-400" />
+                  <span className="hidden sm:inline">Overview</span>
+                </button>
+              )}
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-                  {activeNav}
+                  {activeNav === 'Leads' ? 'Domain Leads' : activeNav === 'Coordinators' ? 'Coordinators' : activeNav === 'Core' ? 'Core Members' : activeNav}
                   <span className="badge-reactbits-new hidden sm:inline-block">Live</span>
                 </h1>
                 <p className="text-xs text-[#9490A6] mt-0.5">
@@ -402,8 +464,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rect-card text-xs text-[#9490A6]">
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rect-card text-xs text-[#94A3B8]">
+                <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
                 <span>Admin Level</span>
               </div>
             </div>
@@ -415,12 +477,12 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           {activeNav === 'Overview' && (
             loading ? (
               <div className="flex items-center justify-center h-64">
-                <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
               </div>
             ) : (
               <div className="space-y-8 pb-12">
                 {/* ── Hero Executive Card (Enlarged with Live Indicators & Quick Links) ── */}
-                <div className="rect-card rect-card-hover-pop p-6 sm:p-9 border-purple-500/30 bg-gradient-to-r from-[#170F2E]/95 via-[#1E143B]/90 to-[#140E26]/95 shadow-[0_0_40px_rgba(147,51,234,0.2)]">
+                <div className="rect-card rect-card-hover-pop p-6 sm:p-9 border-sky-500/30 bg-gradient-to-r from-[#0C1E38]/95 via-[#102747]/90 to-[#0A172B]/95 shadow-[0_0_40px_rgba(14,165,233,0.25)]">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div>
                       <div className="flex flex-wrap items-center gap-2.5 mb-3">
@@ -428,8 +490,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
                           Executive Control
                         </span>
-                        <span className="text-xs text-purple-300 font-mono flex items-center gap-1">
-                          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                        <span className="text-xs text-sky-300 font-mono flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 text-sky-400" />
                           Students Union Central System
                         </span>
                         <span className="text-xs text-slate-400 font-mono hidden sm:inline-block">
@@ -438,7 +500,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       </div>
                       <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight flex items-baseline gap-3.5 font-mono">
                         {totalMembers}
-                        <span className="text-base sm:text-xl font-normal text-purple-300">
+                        <span className="text-base sm:text-xl font-normal text-sky-300">
                           Registered Members
                         </span>
                       </h2>
@@ -450,24 +512,24 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     {/* Quick Launch Buttons on Hero */}
                     <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 shrink-0">
                       <button
-                        onClick={() => setActiveNav('Attendance')}
-                        className="btn-purple-glow px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
+                        onClick={() => navigateTo('Attendance')}
+                        className="btn-sky-glow px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
                       >
                         <Calendar className="w-4 h-4" />
                         <span>Launch Attendance</span>
                       </button>
                       <button
-                        onClick={() => setActiveNav('Reports')}
+                        onClick={() => navigateTo('Reports')}
                         className="btn-rect-secondary px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
                       >
-                        <BarChart2 className="w-4 h-4 text-purple-300" />
+                        <BarChart2 className="w-4 h-4 text-sky-300" />
                         <span>View Analytics</span>
                       </button>
                       <button
-                        onClick={() => setActiveNav('Members')}
+                        onClick={() => navigateTo('Members')}
                         className="btn-rect-secondary px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
                       >
-                        <Users className="w-4 h-4 text-indigo-300" />
+                        <Users className="w-4 h-4 text-cyan-300" />
                         <span>All Members</span>
                       </button>
                     </div>
@@ -481,15 +543,15 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     </div>
                     <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                       <p className="text-[10px] uppercase font-mono text-slate-400">Recorded Sessions</p>
-                      <p className="text-lg font-bold text-purple-300 font-mono mt-0.5">{sessions.length} Meetings</p>
+                      <p className="text-lg font-bold text-sky-300 font-mono mt-0.5">{sessions.length} Meetings</p>
                     </div>
                     <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                       <p className="text-[10px] uppercase font-mono text-slate-400">Leadership Roster</p>
-                      <p className="text-lg font-bold text-pink-300 font-mono mt-0.5">{leadsTotal} Leads / Co-Leads</p>
+                      <p className="text-lg font-bold text-cyan-300 font-mono mt-0.5">{leadsTotal} Leads / Co-Leads</p>
                     </div>
                     <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                       <p className="text-[10px] uppercase font-mono text-slate-400">Core & Coords</p>
-                      <p className="text-lg font-bold text-indigo-300 font-mono mt-0.5">{coreTotal + coordTotal} Members</p>
+                      <p className="text-lg font-bold text-blue-300 font-mono mt-0.5">{coreTotal + coordTotal} Members</p>
                     </div>
                   </div>
                 </div>
@@ -499,7 +561,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2.5">
-                        <Grid3X3 className="w-5 h-5 text-purple-400" />
+                        <Grid3X3 className="w-5 h-5 text-sky-400" />
                         Domain Breakdown & Distribution
                       </h3>
                       <p className="text-xs text-slate-400 font-mono mt-0.5">
@@ -521,9 +583,9 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           key={team}
                           onClick={() => {
                             setFilterTeam(team);
-                            setActiveNav('Members');
+                            navigateTo('Members');
                           }}
-                          className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between cursor-pointer group min-h-[175px] border-white/10 hover:border-purple-400/60 transition-all"
+                          className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between cursor-pointer group min-h-[175px] border-white/10 hover:border-sky-400/60 transition-all"
                           title={`Click to view ${team} team roster`}
                         >
                           <div>
@@ -531,12 +593,12 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                               <span className="badge-reactbits-new font-bold truncate max-w-[100px]">
                                 {team}
                               </span>
-                              <span className="text-xs font-mono text-purple-300 font-bold px-2 py-0.5 rounded bg-purple-950/60 border border-purple-500/30">
+                              <span className="text-xs font-mono text-sky-300 font-bold px-2 py-0.5 rounded bg-sky-950/60 border border-sky-500/30">
                                 {pct}%
                               </span>
                             </div>
                             <div className="mt-2">
-                              <p className="text-3xl font-extrabold text-white group-hover:text-purple-300 transition-colors font-mono">
+                              <p className="text-3xl font-extrabold text-white group-hover:text-sky-300 transition-colors font-mono">
                                 {count}
                               </p>
                               <p className="text-xs text-slate-400 font-mono mt-0.5">Active Members</p>
@@ -544,8 +606,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           </div>
 
                           <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] font-mono text-slate-400">
-                            <span className="text-purple-300 font-semibold">{teamLeads} {teamLeads === 1 ? 'Lead' : 'Leads'}</span>
-                            <div className="flex items-center gap-1 group-hover:text-purple-300 group-hover:translate-x-1 transition-all">
+                            <span className="text-sky-300 font-semibold">{teamLeads} {teamLeads === 1 ? 'Lead' : 'Leads'}</span>
+                            <div className="flex items-center gap-1 group-hover:text-sky-300 group-hover:translate-x-1 transition-all">
                               <span>View</span>
                               <ChevronRight className="w-3.5 h-3.5" />
                             </div>
@@ -554,7 +616,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           {/* Progress bar */}
                           <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mt-2.5">
                             <div
-                              className="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-400 rounded-full transition-all duration-500"
+                              className="h-full bg-gradient-to-r from-sky-500 via-cyan-500 to-blue-400 rounded-full transition-all duration-500"
                               style={{ width: `${pct}%` }}
                             />
                           </div>
@@ -568,7 +630,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2.5">
-                      <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                      <ShieldCheck className="w-5 h-5 text-cyan-400" />
                       Organizational Roles Breakdown
                     </h3>
                     <span className="text-xs font-mono text-slate-400">Hierarchical Distribution</span>
@@ -576,18 +638,17 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {[
-                      { role: 'LEAD', label: 'Domain Leads', count: roleCounts['LEAD'] || 0, color: 'text-purple-300', bg: 'bg-purple-950/50', border: 'border-purple-500/30' },
-                      { role: 'CO-LEAD', label: 'Domain Co-Leads', count: roleCounts['CO-LEAD'] || 0, color: 'text-indigo-300', bg: 'bg-indigo-950/50', border: 'border-indigo-500/30' },
-                      { role: 'COORDINATOR', label: 'Coordinators', count: roleCounts['COORDINATOR'] || 0, color: 'text-emerald-300', bg: 'bg-emerald-950/50', border: 'border-emerald-500/30' },
-                      { role: 'CORE', label: 'Core Members', count: roleCounts['CORE'] || 0, color: 'text-slate-200', bg: 'bg-[#151124]', border: 'border-white/10' },
-                    ].map(({ role, label, count, color, bg, border }) => {
+                      { role: 'LEAD', label: 'Domain Leads', count: roleCounts['LEAD'] || 0, color: 'text-sky-300', bg: 'bg-sky-950/50', border: 'border-sky-500/30', nav: 'Leads' as NavKey },
+                      { role: 'CO-LEAD', label: 'Domain Co-Leads', count: roleCounts['CO-LEAD'] || 0, color: 'text-cyan-300', bg: 'bg-cyan-950/50', border: 'border-cyan-500/30', nav: 'Leads' as NavKey },
+                      { role: 'COORDINATOR', label: 'Coordinators', count: roleCounts['COORDINATOR'] || 0, color: 'text-emerald-300', bg: 'bg-emerald-950/50', border: 'border-emerald-500/30', nav: 'Coordinators' as NavKey },
+                      { role: 'CORE', label: 'Core Members', count: roleCounts['CORE'] || 0, color: 'text-slate-200', bg: 'bg-[#0B1A30]', border: 'border-white/10', nav: 'Core' as NavKey },
+                    ].map(({ role, label, count, color, bg, border, nav }) => {
                       const pct = totalMembers > 0 ? Math.round((count / totalMembers) * 100) : 0;
                       return (
                         <div
                           key={role}
                           onClick={() => {
-                            setFilterRole(role);
-                            setActiveNav('Members');
+                            navigateTo(nav);
                           }}
                           className={`rect-card rect-card-hover-pop p-5 ${bg} border ${border} cursor-pointer group`}
                         >
@@ -599,7 +660,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                               {pct}%
                             </span>
                           </div>
-                          <div className="text-3xl font-black text-white font-mono mt-1 group-hover:text-purple-300 transition-colors">
+                          <div className="text-3xl font-black text-white font-mono mt-1 group-hover:text-sky-300 transition-colors">
                             {count}
                           </div>
                           <div className="flex items-center justify-between text-xs font-mono text-slate-400 mt-3 pt-2 border-t border-white/5">
@@ -615,11 +676,11 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 </div>
 
                 {/* ── Last 3 Sessions Absentees Pulse (Live Administrative Feed) ── */}
-                <div className="rect-card-elevated p-6 border-purple-500/25">
+                <div className="rect-card-elevated p-6 border-sky-500/25">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-white/10">
                     <div>
                       <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2.5">
-                        <Activity className="w-5 h-5 text-pink-400" />
+                        <Activity className="w-5 h-5 text-sky-400" />
                         Last 3 Sessions Attendance Pulse
                       </h3>
                       <p className="text-xs text-slate-400 font-mono mt-0.5">
@@ -630,7 +691,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       onClick={() => setActiveNav('Attendance')}
                       className="btn-rect-secondary px-3.5 py-1.5 text-xs font-mono flex items-center gap-2 cursor-pointer self-start sm:self-auto"
                     >
-                      <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                      <Calendar className="w-3.5 h-3.5 text-sky-400" />
                       <span>Manage All Sessions</span>
                     </button>
                   </div>
@@ -641,7 +702,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       <p>No recent attendance sessions found.</p>
                       <button
                         onClick={() => setActiveNav('Attendance')}
-                        className="btn-purple-glow px-4 py-2 mt-3 text-xs inline-flex items-center gap-2 cursor-pointer"
+                        className="btn-sky-glow px-4 py-2 mt-3 text-xs inline-flex items-center gap-2 cursor-pointer"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         Create First Session
@@ -650,13 +711,17 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                       {recentAbsentees.slice(0, 3).map((session, idx) => {
-                        const targetCount = session.totalTargetCount || (session.presentCount + session.absentCount) || 1;
+                        const teams = (session.team || 'ALL').split(',').map((t: string) => t.trim().toUpperCase());
+                        const targetMembers = (session.team === 'ALL' || teams.includes('ALL'))
+                          ? members
+                          : members.filter(m => teams.includes(m.team?.toUpperCase() || ''));
+                        const targetCount = session.totalTargetCount || (targetMembers.length > 0 ? targetMembers.length : (session.presentCount + session.absentCount)) || 1;
                         const presentPct = Math.round(((session.presentCount || 0) / Math.max(1, targetCount)) * 100);
 
                         return (
                           <div
                             key={session.id || idx}
-                            className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between border-white/10 hover:border-purple-400/50"
+                            className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between border-white/10 hover:border-sky-400/50"
                           >
                             <div>
                               <div className="flex items-center justify-between mb-2">
@@ -725,10 +790,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
                             <button
                               onClick={() => setActiveNav('Attendance')}
-                              className="mt-4 w-full btn-rect-secondary py-2 text-xs font-mono flex items-center justify-center gap-2 cursor-pointer hover:border-purple-400/50"
+                              className="mt-4 w-full btn-rect-secondary py-2 text-xs font-mono flex items-center justify-center gap-2 cursor-pointer hover:border-sky-400/50"
                             >
                               <span>Inspect Session</span>
-                              <ChevronRight className="w-3.5 h-3.5 text-purple-300" />
+                              <ChevronRight className="w-3.5 h-3.5 text-sky-300" />
                             </button>
                           </div>
                         );
@@ -740,63 +805,63 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 {/* ── Operations & Fast Navigation Launchpad (3 Big Cards) ── */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   <div
-                    onClick={() => setActiveNav('Attendance')}
-                    className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-purple-500/20 hover:border-purple-500/60 flex flex-col justify-between min-h-[170px]"
+                    onClick={() => navigateTo('Attendance')}
+                    className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-sky-500/20 hover:border-sky-500/60 flex flex-col justify-between min-h-[170px]"
                   >
                     <div>
-                      <div className="w-10 h-10 rounded-md bg-purple-950/60 border border-purple-500/30 text-purple-400 flex items-center justify-center mb-3">
+                      <div className="w-10 h-10 rounded-md bg-sky-950/60 border border-sky-500/30 text-sky-400 flex items-center justify-center mb-3">
                         <Calendar className="w-5 h-5" />
                       </div>
-                      <h4 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors">
+                      <h4 className="text-base font-bold text-white group-hover:text-sky-300 transition-colors">
                         Attendance Sessions
                       </h4>
                       <p className="text-xs text-slate-400 font-mono mt-1">
                         Create meeting sessions, mark attendance by domain, and track real-time attendance registers.
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 text-xs font-mono text-purple-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
+                    <div className="flex items-center gap-1 text-xs font-mono text-sky-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
                       <span>Take Attendance</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </div>
 
                   <div
-                    onClick={() => setActiveNav('Reports')}
-                    className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-pink-500/20 hover:border-pink-500/60 flex flex-col justify-between min-h-[170px]"
+                    onClick={() => navigateTo('Reports')}
+                    className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-cyan-500/20 hover:border-cyan-500/60 flex flex-col justify-between min-h-[170px]"
                   >
                     <div>
-                      <div className="w-10 h-10 rounded-md bg-pink-950/60 border border-pink-500/30 text-pink-400 flex items-center justify-center mb-3">
+                      <div className="w-10 h-10 rounded-md bg-cyan-950/60 border border-cyan-500/30 text-cyan-400 flex items-center justify-center mb-3">
                         <BarChart2 className="w-5 h-5" />
                       </div>
-                      <h4 className="text-base font-bold text-white group-hover:text-pink-300 transition-colors">
+                      <h4 className="text-base font-bold text-white group-hover:text-cyan-300 transition-colors">
                         Deep Analytics & Reports
                       </h4>
                       <p className="text-xs text-slate-400 font-mono mt-1">
                         Review member attendance frequencies, multi-filter absent lists, and export Excel / CSV spreadsheets.
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 text-xs font-mono text-pink-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
+                    <div className="flex items-center gap-1 text-xs font-mono text-cyan-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
                       <span>Explore Reports</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>
                   </div>
 
                   <div
-                    onClick={() => setActiveNav('Members')}
-                    className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-indigo-500/20 hover:border-indigo-500/60 flex flex-col justify-between min-h-[170px]"
+                    onClick={() => navigateTo('Members')}
+                    className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-blue-500/20 hover:border-blue-500/60 flex flex-col justify-between min-h-[170px]"
                   >
                     <div>
-                      <div className="w-10 h-10 rounded-md bg-indigo-950/60 border border-indigo-500/30 text-indigo-400 flex items-center justify-center mb-3">
+                      <div className="w-10 h-10 rounded-md bg-blue-950/60 border border-blue-500/30 text-blue-400 flex items-center justify-center mb-3">
                         <Users className="w-5 h-5" />
                       </div>
-                      <h4 className="text-base font-bold text-white group-hover:text-indigo-300 transition-colors">
+                      <h4 className="text-base font-bold text-white group-hover:text-blue-300 transition-colors">
                         Member Registry Management
                       </h4>
                       <p className="text-xs text-slate-400 font-mono mt-1">
                         Search and filter 229 student records, manage roles and contact details, and view individual histories.
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 text-xs font-mono text-indigo-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
+                    <div className="flex items-center gap-1 text-xs font-mono text-blue-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
                       <span>Manage Roster</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </div>
@@ -807,9 +872,9 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
           )}
 
           {/* ══════════════════════════════════════════════
-              VIEW 2: MEMBERS
+              VIEW 2: MEMBERS & DEDICATED ROLE DIRECTORIES
              ══════════════════════════════════════════════ */}
-          {activeNav === 'Members' && (
+          {['Members', 'Leads', 'Coordinators', 'Core'].includes(activeNav) && (
             <div className="flex flex-col gap-4 md:h-full md:max-h-[calc(100vh-100px)]">
               {/* Rectangular Search Bar & Filters */}
               <div className="rect-card p-4 shrink-0">
@@ -819,7 +884,15 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <input
                       type="text"
-                      placeholder="Search by name, roll no, department, phone..."
+                      placeholder={
+                        activeNav === 'Leads'
+                          ? 'Search leads by name, roll no, department...'
+                          : activeNav === 'Coordinators'
+                          ? 'Search coordinators by name, roll no...'
+                          : activeNav === 'Core'
+                          ? 'Search core members by name, roll no...'
+                          : 'Search by name, roll no, department, phone...'
+                      }
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="rect-input w-full pl-10 pr-12 py-2 text-xs"
@@ -842,33 +915,35 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
                   {/* Filters */}
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <div className="flex items-center gap-1.5 bg-[#100D1A] border border-white/10 rounded-md px-3 py-1.5">
-                      <Filter className="w-3 h-3 text-purple-400" />
+                    <div className="flex items-center gap-1.5 bg-[#0B172B] border border-white/10 rounded-md px-3 py-1.5">
+                      <Filter className="w-3 h-3 text-sky-400" />
                       <select
                         value={filterTeam}
                         onChange={(e) => setFilterTeam(e.target.value)}
                         className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1"
                       >
-                        <option value="ALL" className="bg-[#100D1A] text-slate-200">All Domains</option>
+                        <option value="ALL" className="bg-[#0B172B] text-slate-200">All Domains</option>
                         {Array.from(new Set(members.map(m => m.team))).sort().map(t => (
-                          <option key={t} value={t} className="bg-[#100D1A] text-slate-200">{t}</option>
+                          <option key={t} value={t} className="bg-[#0B172B] text-slate-200">{t}</option>
                         ))}
                       </select>
                     </div>
 
-                    <div className="flex items-center gap-1.5 bg-[#100D1A] border border-white/10 rounded-md px-3 py-1.5">
-                      <Filter className="w-3 h-3 text-purple-400" />
-                      <select
-                        value={filterRole}
-                        onChange={(e) => setFilterRole(e.target.value)}
-                        className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1"
-                      >
-                        <option value="ALL" className="bg-[#100D1A] text-slate-200">All Roles</option>
-                        {Array.from(new Set(members.map(m => m.role))).sort().map(r => (
-                          <option key={r} value={r} className="bg-[#100D1A] text-slate-200">{r}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {activeNav === 'Members' && (
+                      <div className="flex items-center gap-1.5 bg-[#0B172B] border border-white/10 rounded-md px-3 py-1.5">
+                        <Filter className="w-3 h-3 text-sky-400" />
+                        <select
+                          value={filterRole}
+                          onChange={(e) => setFilterRole(e.target.value)}
+                          className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1"
+                        >
+                          <option value="ALL" className="bg-[#0B172B] text-slate-200">All Roles</option>
+                          {Array.from(new Set(members.map(m => m.role))).sort().map(r => (
+                            <option key={r} value={r} className="bg-[#0B172B] text-slate-200">{r}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -876,12 +951,32 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               {/* Members Table (Crisp Rectangular Card) */}
               <div className="rect-card overflow-hidden flex flex-col flex-1 min-h-0">
                 <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between shrink-0">
-                  <div>
-                    <h2 className="text-base font-bold text-white">Member Directory</h2>
-                    <p className="text-xs text-[#9490A6] mt-0.5">
-                      Showing {sortedMembers.length} {sortedMembers.length === 1 ? 'member' : 'members'}
-                      {(filterTeam !== 'ALL' || filterRole !== 'ALL' || searchQuery) && ' (filtered)'}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    {['Leads', 'Coordinators', 'Core'].includes(activeNav) && (
+                      <button
+                        onClick={() => navigateTo('Overview')}
+                        className="btn-rect-secondary px-3 py-1.5 text-xs font-mono inline-flex items-center gap-1.5 cursor-pointer"
+                        title="Back to Overview"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5 text-sky-400" />
+                        <span className="hidden sm:inline">Overview</span>
+                      </button>
+                    )}
+                    <div>
+                      <h2 className="text-base font-bold text-white">
+                        {activeNav === 'Leads'
+                          ? 'Domain Leads & Co-Leads Directory'
+                          : activeNav === 'Coordinators'
+                          ? 'Coordinators Directory'
+                          : activeNav === 'Core'
+                          ? 'Core Members Directory'
+                          : 'Member Directory'}
+                      </h2>
+                      <p className="text-xs text-[#9490A6] mt-0.5">
+                        Showing {sortedMembers.length} {sortedMembers.length === 1 ? 'member' : 'members'}
+                        {(filterTeam !== 'ALL' || (activeNav === 'Members' && filterRole !== 'ALL') || searchQuery) && ' (filtered)'}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -920,19 +1015,19 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                               </th>
                             );
                           })}
-                        <th className="px-4 sm:px-6 py-3.5 w-16 text-right sticky right-0 bg-[#100D1B]/95 border-b border-white/[0.08]">
+                        <th className="px-4 sm:px-6 py-3.5 w-16 text-right sticky right-0 bg-[#0A1628]/95 border-b border-white/[0.08]">
                           {hiddenColumns.length > 0 && (
                             <div className="relative group inline-block text-left">
-                              <button className="p-1 text-slate-400 hover:text-purple-400 rounded transition-all" title="Restore columns">
+                              <button className="p-1 text-slate-400 hover:text-sky-400 rounded transition-all" title="Restore columns">
                                 <Plus className="w-4 h-4" />
                               </button>
-                              <div className="absolute right-0 top-full mt-1 w-40 bg-[#141022] border border-white/10 shadow-2xl rounded-md p-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                              <div className="absolute right-0 top-full mt-1 w-40 bg-[#0E1E34] border border-white/10 shadow-2xl rounded-md p-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1.5">Restore</div>
                                 {hiddenColumns.map(col => (
                                   <button
                                     key={col}
                                     onClick={() => setHiddenColumns(prev => prev.filter(c => c !== col))}
-                                    className="w-full text-left px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/5 hover:text-purple-400 rounded flex items-center justify-between group/btn transition-colors cursor-pointer"
+                                    className="w-full text-left px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/5 hover:text-sky-400 rounded flex items-center justify-between group/btn transition-colors cursor-pointer"
                                   >
                                     {col}
                                     <Plus className="w-3 h-3 opacity-0 group-hover/btn:opacity-100" />
@@ -998,18 +1093,18 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                                 {m.phone || '—'}
                               </td>
                             )}
-                            <td className="px-3 sm:px-4 py-3.5 whitespace-nowrap text-right sticky right-0 bg-[#100D1B]/90 backdrop-blur-md">
+                            <td className="px-3 sm:px-4 py-3.5 whitespace-nowrap text-right sticky right-0 bg-[#0A1628]/90 backdrop-blur-md">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => handleOpenHistory(m)}
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-purple-400 hover:bg-white/5 transition-colors cursor-pointer"
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-sky-400 hover:bg-white/5 transition-colors cursor-pointer"
                                   title="View details"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => handleOpenEdit(m)}
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-pink-400 hover:bg-white/5 transition-colors cursor-pointer"
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-cyan-400 hover:bg-white/5 transition-colors cursor-pointer"
                                   title="Edit member"
                                 >
                                   <Edit3 className="w-4 h-4" />
@@ -1092,7 +1187,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 </div>
                 {selectedMemberHistory && (
                   <div className="text-right">
-                    <span className="text-lg font-bold text-purple-400">{selectedMemberHistory.stats.presentPct}%</span>
+                    <span className="text-lg font-bold text-sky-400">{selectedMemberHistory.stats.presentPct}%</span>
                     <p className="text-[10px] text-slate-400">Overall Rate</p>
                   </div>
                 )}
@@ -1121,7 +1216,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               {/* Attendance Stats or Loader */}
               {historyLoading ? (
                 <div className="py-8 flex flex-col items-center justify-center text-slate-400">
-                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-2" />
+                  <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-2" />
                   <p className="text-xs">Loading attendance details...</p>
                 </div>
               ) : selectedMemberHistory ? (
@@ -1140,9 +1235,9 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       <div className="text-xs font-bold text-rose-300">{selectedMemberHistory.stats.absent}</div>
                       <span className="text-[10px] text-rose-400">Absent</span>
                     </div>
-                    <div className="p-2.5 rounded-md bg-purple-500/10 border border-purple-500/20">
-                      <div className="text-xs font-bold text-purple-300">{selectedMemberHistory.stats.informed}</div>
-                      <span className="text-[10px] text-purple-400">Informed</span>
+                    <div className="p-2.5 rounded-md bg-sky-500/10 border border-sky-500/20">
+                      <div className="text-xs font-bold text-sky-300">{selectedMemberHistory.stats.informed}</div>
+                      <span className="text-[10px] text-sky-400">Informed</span>
                     </div>
                   </div>
 
@@ -1157,7 +1252,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                           const STATUS_STYLE: Record<string, { badge: string; label: string }> = {
                             PRESENT: { badge: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30', label: 'Present' },
                             ABSENT: { badge: 'bg-rose-500/15 text-rose-400 border border-rose-500/30', label: 'Absent' },
-                            INFORMED: { badge: 'bg-purple-500/15 text-purple-300 border border-purple-500/30', label: 'Informed' },
+                            INFORMED: { badge: 'bg-sky-500/15 text-sky-300 border border-sky-500/30', label: 'Informed' },
                             UNMARKED: { badge: 'bg-white/5 text-slate-400 border border-white/10', label: 'Unmarked' },
                           };
                           const statusStyle = STATUS_STYLE[h.status] || STATUS_STYLE.UNMARKED;
@@ -1182,7 +1277,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               {/* Edit shortcut */}
               <button
                 onClick={() => { handleOpenEdit(viewingMember); setViewingMember(null); setSelectedMemberHistory(null); }}
-                className="btn-purple-glow w-full py-2.5 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                className="btn-sky-glow w-full py-2.5 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 Edit Member Details
@@ -1190,7 +1285,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-3.5 bg-[#0B0813]/80 border-t border-white/[0.08] text-right">
+            <div className="px-6 py-3.5 bg-[#050B14]/80 border-t border-white/[0.08] text-right">
               <button
                 onClick={() => { setViewingMember(null); setSelectedMemberHistory(null); }}
                 className="btn-rect-secondary px-4 py-2 text-xs font-semibold cursor-pointer"
@@ -1212,7 +1307,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             <div className="px-6 py-5 border-b border-white/[0.08] flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white">Edit Member Details</h3>
-                <p className="text-xs text-[#9490A6] mt-0.5">
+                <p className="text-xs text-slate-400 mt-0.5">
                   Update info for {editingMember.name}
                 </p>
               </div>
@@ -1244,9 +1339,9 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     <select
                       value={editForm.team}
                       onChange={(e) => setEditForm(prev => ({ ...prev, team: e.target.value }))}
-                      className="rect-input w-full px-2 py-1.5 text-xs bg-[#100D1A] text-slate-200 mt-1 cursor-pointer"
+                      className="rect-input w-full px-2 py-1.5 text-xs bg-[#0B172B] text-slate-200 mt-1 cursor-pointer"
                     >
-                      {['MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN', 'ALL'].map(t => <option key={t} value={t} className="bg-[#100D1A] text-slate-200">{t}</option>)}
+                      {['MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN', 'ALL'].map(t => <option key={t} value={t} className="bg-[#0B172B] text-slate-200">{t}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1254,9 +1349,9 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     <select
                       value={editForm.role}
                       onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
-                      className="rect-input w-full px-2 py-1.5 text-xs bg-[#100D1A] text-slate-200 mt-1 cursor-pointer"
+                      className="rect-input w-full px-2 py-1.5 text-xs bg-[#0B172B] text-slate-200 mt-1 cursor-pointer"
                     >
-                      {['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(r => <option key={r} value={r} className="bg-[#100D1A] text-slate-200">{r}</option>)}
+                      {['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(r => <option key={r} value={r} className="bg-[#0B172B] text-slate-200">{r}</option>)}
                     </select>
                   </div>
                 </div>
@@ -1342,7 +1437,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 <button
                   type="submit"
                   disabled={editSaving}
-                  className="btn-purple-glow px-4 py-2 text-xs font-semibold disabled:opacity-50 cursor-pointer"
+                  className="btn-sky-glow px-4 py-2 text-xs font-semibold disabled:opacity-50 cursor-pointer"
                 >
                   {editSaving ? 'Saving...' : 'Save Changes'}
                 </button>

@@ -301,15 +301,15 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     {activeSession.team.split(',').join(', ')}
                   </span>
                   <span className="text-xs font-medium text-[#9490A6] flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
                     {activeSession.date}
                   </span>
                   <span className="text-xs font-medium text-[#9490A6] flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-purple-400" />
+                    <Clock className="w-3.5 h-3.5 text-sky-400" />
                     {activeSession.startTime} - {activeSession.endTime || 'Ongoing'}
                   </span>
                   <span className="text-xs font-medium text-[#9490A6] flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-purple-400" />
+                    <Users className="w-3.5 h-3.5 text-sky-400" />
                     {totalCount} Target Members
                   </span>
                 </div>
@@ -401,7 +401,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                         <span className="text-slate-300 font-medium">{member.role}</span>
                       </td>
                       <td className="px-4 sm:px-6 py-3 text-right">
-                        <div className="inline-flex items-center gap-1.5 p-1 bg-[#100D1A] border border-white/10 rounded-md">
+                        <div className="inline-flex items-center gap-1.5 p-1 bg-[#0B172B] border border-white/10 rounded-md">
                           <button
                             onClick={() => handleMarkAttendance(member.id, isPresent ? 'ABSENT' : 'PRESENT')}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
@@ -428,8 +428,8 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                             onClick={() => handleMarkAttendance(member.id, 'INFORMED')}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
                               isInformed
-                                ? 'bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]'
-                                : 'text-slate-400 hover:text-purple-300 hover:bg-purple-500/10'
+                                ? 'bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]'
+                                : 'text-slate-400 hover:text-sky-300 hover:bg-sky-500/10'
                             }`}
                           >
                             <FileText className="w-3.5 h-3.5" />
@@ -475,7 +475,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
         {absenteesLoading ? (
           <div className="py-8 flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : recentAbsentees.length === 0 ? (
           <div className="py-8 text-center bg-white/[0.02] rounded-md border border-dashed border-white/10">
@@ -492,7 +492,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               return (
                 <div
                   key={s.id}
-                  className="rect-card p-4 flex flex-col justify-between hover:border-purple-500/40 transition-all group"
+                  className="rect-card p-4 flex flex-col justify-between hover:border-sky-500/40 transition-all group"
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2 mb-2">
@@ -504,7 +504,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
                             s.sessionSlot === 'FN' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' :
                             s.sessionSlot === 'AN' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/30' :
-                            'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                            'bg-sky-500/15 text-sky-300 border border-sky-500/30'
                           }`}>
                             {s.sessionSlot}
                           </span>
@@ -520,11 +520,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
                     <div className="flex items-center gap-3 text-xs text-[#9490A6] mb-3">
                       <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                        <Calendar className="w-3.5 h-3.5 text-sky-400" />
                         {s.date}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-purple-400" />
+                        <Clock className="w-3.5 h-3.5 text-sky-400" />
                         {s.startTime} {s.endTime ? `- ${s.endTime}` : ''}
                       </span>
                     </div>
@@ -534,7 +534,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                         <span>Absentee List ({s.absentees.length})</span>
                         <button
                           onClick={() => setExpandedSessionIds(prev => ({ ...prev, [s.id]: !isExpanded }))}
-                          className="text-purple-400 hover:text-purple-300 font-semibold cursor-pointer flex items-center gap-0.5"
+                          className="text-sky-400 hover:text-sky-300 font-semibold cursor-pointer flex items-center gap-0.5"
                         >
                           {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                           {isExpanded ? 'Hide' : 'Show'}
@@ -547,7 +547,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                             🎉 100% Attendance — Zero Absentees!
                           </div>
                         ) : (
-                          <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-md border border-white/10 bg-[#0B0813]/80 p-2">
+                          <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-md border border-white/10 bg-[#050B14]/80 p-2">
                             {s.absentees.map(ab => (
                               <div key={ab.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded hover:bg-white/[0.04]">
                                 <div className="min-w-0 flex-1 pr-2">
@@ -603,7 +603,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           </div>
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="btn-purple-glow shrink-0 px-3.5 py-2 text-xs font-semibold flex items-center gap-2 cursor-pointer"
+            className="btn-sky-glow shrink-0 px-3.5 py-2 text-xs font-semibold flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>New Session</span>
@@ -613,11 +613,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center py-12">
-          <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
       ) : sessions.length === 0 ? (
         <div className="rect-card p-8 text-center flex-1 flex flex-col items-center justify-center">
-          <div className="w-16 h-16 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-md flex items-center justify-center mb-4 mx-auto">
+          <div className="w-16 h-16 bg-sky-500/10 border border-sky-500/20 text-sky-400 rounded-md flex items-center justify-center mb-4 mx-auto">
             <Calendar className="w-8 h-8" />
           </div>
           <h3 className="text-lg font-bold text-white mb-2">No Sessions Yet</h3>
@@ -643,7 +643,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               <div
                 key={session.id}
                 onClick={() => setActiveSession(session)}
-                className="rect-card p-5 hover:border-purple-500/40 cursor-pointer group"
+                className="rect-card p-5 hover:border-sky-500/40 cursor-pointer group"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
@@ -654,12 +654,12 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
                         session.sessionSlot === 'FN' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' :
                         session.sessionSlot === 'AN' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/30' :
-                        'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                        'bg-sky-500/15 text-sky-300 border border-sky-500/30'
                       }`}>
                         {session.sessionSlot}
                       </span>
                     </div>
-                    <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-purple-300 transition-colors">
+                    <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-sky-300 transition-colors">
                       {session.title}
                     </h3>
                   </div>
@@ -671,7 +671,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                    <div className="btn-rect-secondary p-2 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                    <div className="btn-rect-secondary p-2 group-hover:bg-sky-600 group-hover:text-white transition-colors">
                       <ArrowRight className="w-4 h-4" />
                     </div>
                   </div>
@@ -679,11 +679,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
                 <div className="flex items-center gap-6 text-xs text-[#9490A6] mb-4">
                   <div className="flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
                     {session.date}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-purple-400" />
+                    <Clock className="w-3.5 h-3.5 text-sky-400" />
                     {session.startTime} {session.endTime ? `- ${session.endTime}` : ''}
                   </div>
                 </div>
@@ -701,7 +701,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                   </div>
                   <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all duration-1000 ${progress === 100 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-purple-500 to-pink-500'}`}
+                      className={`h-full rounded-full transition-all duration-1000 ${progress === 100 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-sky-500 to-cyan-400'}`}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
@@ -755,7 +755,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                   <select
                     value={createForm.sessionSlot}
                     onChange={(e) => setCreateForm({ ...createForm, sessionSlot: e.target.value })}
-                    className="rect-input w-full px-3 py-2 text-xs bg-[#100D1A] text-slate-200 cursor-pointer"
+                    className="rect-input w-full px-3 py-2 text-xs bg-[#0B172B] text-slate-200 cursor-pointer"
                   >
                     <option value="FN">FN (Forenoon / Morning)</option>
                     <option value="AN">AN (Afternoon)</option>
@@ -791,7 +791,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 <select
                   value={createForm.team}
                   onChange={(e) => setCreateForm({ ...createForm, team: e.target.value })}
-                  className="rect-input w-full px-3 py-2 text-xs bg-[#100D1A] text-slate-200 cursor-pointer"
+                  className="rect-input w-full px-3 py-2 text-xs bg-[#0B172B] text-slate-200 cursor-pointer"
                 >
                   <option value="ALL">ALL (Entire Students Union)</option>
                   {Array.from(new Set(members.map(m => m.team))).sort().map(team => (
@@ -810,7 +810,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 btn-purple-glow py-2 text-xs font-semibold cursor-pointer"
+                  className="flex-1 btn-sky-glow py-2 text-xs font-semibold cursor-pointer"
                 >
                   Create Session
                 </button>

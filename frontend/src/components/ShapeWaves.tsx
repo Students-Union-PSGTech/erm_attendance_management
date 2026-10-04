@@ -37,8 +37,8 @@ export default function ShapeWaves({
   shapes = 'mixed',
   cellSize = 12,
   dotSize = 0.75,
-  color = '#9333EA',
-  hoverColor = '#FF9FFC',
+  color = '#0EA5E9',
+  hoverColor = '#38BDF8',
   backgroundColor = 'transparent',
   speed = 1,
   scale = 1,
@@ -290,7 +290,7 @@ export default function ShapeWaves({
           if (ring.intensity > 0.05) {
             ctx.beginPath();
             ctx.arc(ring.cx, ring.cy, ring.radius, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(168, 85, 247, ${ring.intensity * 0.18 * brightness})`;
+            ctx.strokeStyle = `rgba(56, 189, 248, ${ring.intensity * 0.22 * brightness})`;
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
@@ -298,7 +298,7 @@ export default function ShapeWaves({
             if (ring.radius > 60) {
               ctx.beginPath();
               ctx.arc(ring.cx, ring.cy, ring.radius * 0.7, 0, Math.PI * 2);
-              ctx.strokeStyle = `rgba(255, 159, 252, ${ring.intensity * 0.1 * brightness})`;
+              ctx.strokeStyle = `rgba(125, 211, 252, ${ring.intensity * 0.14 * brightness})`;
               ctx.lineWidth = 1;
               ctx.stroke();
             }

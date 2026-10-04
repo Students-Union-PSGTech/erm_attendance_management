@@ -184,9 +184,9 @@ const fragmentShaderSource = `
 `;
 
 export default function Topography({
-  lowColor = '#5227FF',
-  midColor = '#FF9FFC',
-  highColor = '#FFFFFF',
+  lowColor = '#0284C7',
+  midColor = '#38BDF8',
+  highColor = '#F0F9FF',
   speed = 0.35,
   morphAmount = 3,
   morphSpeed = 0.05,

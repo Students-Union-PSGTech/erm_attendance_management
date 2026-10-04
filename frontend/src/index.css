@@ -2,18 +2,19 @@
 @import "tailwindcss";
 
 :root {
-  --bg-obsidian: #0B0813;
-  --bg-card: #120F1D;
-  --bg-card-hover: #171326;
-  --bg-surface: #151124;
+  --bg-obsidian: #050B14;
+  --bg-card: #0A1526;
+  --bg-card-hover: #0F2038;
+  --bg-surface: #0D1B30;
   --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-purple: rgba(147, 51, 234, 0.25);
-  --accent-purple: #9333EA;
-  --accent-violet: #7C3AED;
-  --accent-pink: #FF9FFC;
-  --text-primary: #F8FAFC;
-  --text-secondary: #9490A6;
-  --text-muted: #646079;
+  --border-sky: rgba(14, 165, 233, 0.3);
+  --accent-sky: #0EA5E9;
+  --accent-sky-bright: #38BDF8;
+  --accent-cyan: #06B6D4;
+  --accent-light-sky: #7DD3FC;
+  --text-primary: #F0F9FF;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
 }
 
 * {
@@ -30,12 +31,12 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════
-   REACT BITS OBSIDIAN RECTANGULAR CARDS & CONTAINERS
+   REACT BITS SKY BLUE RECTANGULAR CARDS & CONTAINERS
    ═══════════════════════════════════════════════════ */
 
 /* Perfect crisp rectangular card */
 .rect-card {
-  background: rgba(18, 15, 29, 0.88);
+  background: rgba(10, 21, 38, 0.88);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -44,20 +45,20 @@ body {
 }
 
 .rect-card:hover {
-  border-color: rgba(168, 85, 247, 0.35);
-  box-shadow: 0 4px 28px -6px rgba(147, 51, 234, 0.18), 0 0 0 1px rgba(168, 85, 247, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 4px 28px -6px rgba(14, 165, 233, 0.22), 0 0 0 1px rgba(56, 189, 248, 0.2);
 }
 
 .rect-card-elevated {
-  background: rgba(20, 16, 33, 0.94);
+  background: rgba(12, 25, 45, 0.94);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.25);
   border-radius: 8px;
-  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.7), 0 0 30px rgba(147, 51, 234, 0.15);
+  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.7), 0 0 30px rgba(14, 165, 233, 0.2);
 }
 
-/* Card hover highlight and popping above effect */
+/* Card hover highlight and popping above effect (Sky Blue 🩵) */
 .rect-card-hover-pop {
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), 
               box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), 
@@ -69,10 +70,10 @@ body {
 
 .rect-card-hover-pop:hover {
   transform: translateY(-8px) scale(1.018);
-  border-color: rgba(192, 132, 252, 0.65) !important;
-  box-shadow: 0 22px 45px -10px rgba(147, 51, 234, 0.42),
-              0 0 35px rgba(168, 85, 247, 0.25),
-              inset 0 0 25px rgba(192, 132, 252, 0.08) !important;
+  border-color: rgba(56, 189, 248, 0.75) !important;
+  box-shadow: 0 22px 45px -10px rgba(14, 165, 233, 0.45),
+              0 0 35px rgba(56, 189, 248, 0.3),
+              inset 0 0 25px rgba(56, 189, 248, 0.08) !important;
   z-index: 20;
 }
 
@@ -80,10 +81,10 @@ body {
 @keyframes circleExpand {
   0% {
     transform: translate(-50%, -50%) scale(0.4);
-    opacity: 0.8;
+    opacity: 0.85;
   }
   50% {
-    opacity: 0.4;
+    opacity: 0.45;
   }
   100% {
     transform: translate(-50%, -50%) scale(2.2);
@@ -96,77 +97,77 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════
-   BUTTONS (React Bits Pro Glowing Style)
+   BUTTONS (React Bits Pro Sky Blue Glowing Style 🩵)
    ═══════════════════════════════════════════════════ */
-.btn-purple-glow {
-  background: linear-gradient(135deg, #7C3AED 0%, #9333EA 100%);
+.btn-sky-glow {
+  background: linear-gradient(135deg, #0284C7 0%, #0EA5E9 50%, #38BDF8 100%);
   color: #FFFFFF;
   font-weight: 600;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 0 20px rgba(147, 51, 234, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 24px rgba(14, 165, 233, 0.5);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.btn-purple-glow:hover {
-  background: linear-gradient(135deg, #6D28D9 0%, #7E22CE 100%);
-  box-shadow: 0 0 30px rgba(168, 85, 247, 0.7);
+.btn-sky-glow:hover {
+  background: linear-gradient(135deg, #0369A1 0%, #0284C7 50%, #0EA5E9 100%);
+  box-shadow: 0 0 35px rgba(56, 189, 248, 0.75);
   transform: translateY(-1px);
 }
 
-.btn-purple-glow:active {
+.btn-sky-glow:active {
   transform: translateY(0);
 }
 
 .btn-rect-secondary {
-  background: rgba(24, 20, 38, 0.85);
+  background: rgba(14, 28, 48, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #D1D5DB;
+  color: #E0F2FE;
   font-weight: 500;
   border-radius: 6px;
   transition: all 0.18s ease;
 }
 
 .btn-rect-secondary:hover {
-  background: rgba(36, 29, 58, 0.9);
-  border-color: rgba(168, 85, 247, 0.35);
+  background: rgba(18, 38, 66, 0.9);
+  border-color: rgba(56, 189, 248, 0.4);
   color: #FFFFFF;
-  box-shadow: 0 0 16px rgba(147, 51, 234, 0.12);
+  box-shadow: 0 0 16px rgba(14, 165, 233, 0.2);
 }
 
 /* ═══════════════════════════════════════════════════
    INPUTS & SEARCH
    ═══════════════════════════════════════════════════ */
 .rect-input {
-  background: rgba(16, 13, 26, 0.9);
+  background: rgba(8, 17, 32, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 6px;
-  color: #F8FAFC;
+  color: #F0F9FF;
   outline: none;
   transition: all 0.2s ease;
 }
 
 .rect-input:hover {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .rect-input:focus {
-  border-color: #9333EA;
-  box-shadow: 0 0 0 2px rgba(147, 51, 234, 0.25), 0 0 16px rgba(147, 51, 234, 0.15);
-  background: rgba(20, 16, 33, 0.98);
+  border-color: #38BDF8;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.25), 0 0 18px rgba(56, 189, 248, 0.2);
+  background: rgba(11, 23, 42, 0.98);
 }
 
 .rect-input::placeholder {
-  color: #646079;
+  color: #64748B;
 }
 
 /* ═══════════════════════════════════════════════════
    TAGS & BADGES (React Bits "NEW" / Category Pill)
    ═══════════════════════════════════════════════════ */
 .badge-reactbits-new {
-  background: #24173D;
-  color: #C084FC;
-  border: 1px solid rgba(168, 85, 247, 0.35);
+  background: #0C284D;
+  color: #38BDF8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -194,24 +195,24 @@ body {
   border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
-  color: #9490A6;
+  color: #94A3B8;
   border: 1px solid transparent;
   transition: all 0.18s ease;
   cursor: pointer;
 }
 
 .nav-item-rect:hover:not(.nav-item-rect-active) {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
   color: #FFFFFF;
-  border-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 .nav-item-rect-active {
-  background: rgba(147, 51, 234, 0.15);
-  color: #F8FAFC;
+  background: rgba(14, 165, 233, 0.16);
+  color: #F0F9FF;
   font-weight: 600;
-  border-color: rgba(168, 85, 247, 0.35);
-  box-shadow: 0 0 16px rgba(147, 51, 234, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 16px rgba(14, 165, 233, 0.2);
 }
 
 /* Scrollbar */
@@ -221,22 +222,22 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0813;
+  background: #050B14;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #231C38;
+  background: #0F2746;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3B2E5C;
+  background: #1A3B66;
 }
 
 /* Animations */
 @keyframes pulseGlow {
   0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+  50% { opacity: 0.75; }
 }
 
 .animate-pulse-glow {

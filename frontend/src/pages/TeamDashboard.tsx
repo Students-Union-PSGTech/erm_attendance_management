@@ -42,7 +42,7 @@ interface TeamDashboardProps {
   onLogout: () => void;
 }
 
-type NavKey = 'Overview' | 'Members' | 'Attendance' | 'Reports';
+type NavKey = 'Overview' | 'Members' | 'Attendance' | 'Reports' | 'Leads' | 'Coordinators' | 'Core';
 
 export interface Member {
   id: string;
@@ -126,7 +126,7 @@ const NAV: { icon: React.ElementType; label: NavKey }[] = [
 ];
 
 const ROLE_STYLE: Record<string, string> = {
-  LEAD: 'bg-[#2E1848] text-[#D8B4FE] border border-purple-500/40',
+  LEAD: 'bg-[#082F49] text-[#7DD3FC] border border-sky-500/40',
   'CO-LEAD': 'bg-[#1E1B4B] text-[#A5B4FC] border border-indigo-500/40',
   COORDINATOR: 'bg-[#064E3B] text-[#6EE7B7] border border-emerald-500/40',
   CORE: 'bg-[#1E1E2E] text-[#CBD5E1] border border-white/10',
@@ -135,12 +135,12 @@ const ROLE_STYLE: Record<string, string> = {
 const STATUS_STYLE: Record<string, { badge: string; label: string }> = {
   PRESENT: { badge: 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30', label: 'Present' },
   ABSENT: { badge: 'bg-rose-950/60 text-rose-400 border border-rose-500/30', label: 'Absent' },
-  INFORMED: { badge: 'bg-purple-950/60 text-purple-300 border border-purple-500/30', label: 'Informed' },
+  INFORMED: { badge: 'bg-sky-950/60 text-sky-300 border border-sky-500/30', label: 'Informed' },
   UNMARKED: { badge: 'bg-slate-900/60 text-slate-400 border border-slate-700/50', label: 'Unmarked' },
 };
 
 const avatarColor = (name: string) => {
-  const colors = ['#9333EA', '#7C3AED', '#2563EB', '#059669', '#DB2777', '#EA580C'];
+  const colors = ['#0EA5E9', '#0284C7', '#06B6D4', '#0D9488', '#38BDF8', '#3B82F6'];
   return colors[name.charCodeAt(0) % colors.length];
 };
 
@@ -157,6 +157,49 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const teamName = user.team || 'TECH';
   const [activeNav, setActiveNav] = useState<NavKey>('Overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const navigateTo = (nav: NavKey, replace = false) => {
+    setActiveNav(nav);
+    const hash = `#${nav.toLowerCase()}`;
+    if (window.location.hash !== hash) {
+      if (replace) {
+        window.history.replaceState({ nav }, '', hash);
+      } else {
+        window.history.pushState({ nav }, '', hash);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const parseNav = (): NavKey => {
+      const h = window.location.hash.replace('#', '').toLowerCase();
+      const map: Record<string, NavKey> = {
+        overview: 'Overview',
+        members: 'Members',
+        attendance: 'Attendance',
+        reports: 'Reports',
+        leads: 'Leads',
+        coordinators: 'Coordinators',
+        core: 'Core',
+      };
+      return map[h] || 'Overview';
+    };
+
+    const initialNav = parseNav();
+    setActiveNav(initialNav);
+    window.history.replaceState({ nav: initialNav }, '', `#${initialNav.toLowerCase()}`);
+
+    const onPopState = (e: PopStateEvent) => {
+      if (e.state?.nav) {
+        setActiveNav(e.state.nav);
+      } else {
+        setActiveNav(parseNav());
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // Core data states
   const [members, setMembers] = useState<Member[]>([]);
@@ -202,8 +245,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     const config = sortConfigs[sortIndex];
     return (
       <div className="flex items-center ml-1">
-        {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-purple-400" /> : <ArrowDown className="w-3 h-3 text-purple-400" />}
-        {sortIndex > 0 && <span className="text-[9px] font-bold text-purple-400 ml-0.5">{sortIndex + 1}</span>}
+        {config.direction === 'asc' ? <ArrowUp className="w-3 h-3 text-sky-400" /> : <ArrowDown className="w-3 h-3 text-sky-400" />}
+        {sortIndex > 0 && <span className="text-[9px] font-bold text-sky-400 ml-0.5">{sortIndex + 1}</span>}
       </div>
     );
   };
@@ -372,10 +415,21 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     });
   }, [members, attendanceStats]);
 
-  // Filtered members for Members tab
+  // Filtered members for Members tab & specific role directories
   const filteredMembers = useMemo(() => {
     return membersWithStats.filter((m) => {
-      if (filterRole !== 'ALL' && m.role !== filterRole) return false;
+      let matchesRole = true;
+      if (activeNav === 'Leads') {
+        matchesRole = m.role === 'LEAD' || m.role === 'CO-LEAD';
+      } else if (activeNav === 'Coordinators') {
+        matchesRole = m.role === 'COORDINATOR';
+      } else if (activeNav === 'Core') {
+        matchesRole = m.role === 'CORE';
+      } else {
+        matchesRole = filterRole === 'ALL' || m.role === filterRole;
+      }
+      if (!matchesRole) return false;
+
       if (searchMemberQuery) {
         const q = searchMemberQuery.toLowerCase();
         return (
@@ -387,7 +441,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       }
       return true;
     });
-  }, [membersWithStats, filterRole, searchMemberQuery]);
+  }, [membersWithStats, filterRole, searchMemberQuery, activeNav]);
 
 
   const sortedMembers = useMemo(() => {
@@ -806,7 +860,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#0E0B18]/85 backdrop-blur-xl border-r border-white/10 py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${sidebarOpen
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#050B14]/85 backdrop-blur-xl border-r border-white/10 py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${sidebarOpen
             ? 'w-60 translate-x-0 opacity-100 shadow-[0_0_50px_rgba(0,0,0,0.8)] md:shadow-none'
             : 'w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden opacity-0 p-0 border-0 pointer-events-none'
           }`}
@@ -816,11 +870,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           <img
             src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
             alt="Logo"
-            className="w-9 h-9 rounded-md object-cover shadow-xs shrink-0 border border-purple-500/30"
+            className="w-9 h-9 rounded-md object-cover shadow-xs shrink-0 border border-sky-500/30"
           />
           <div className="min-w-0 flex-1">
             <p className="text-white font-bold text-sm leading-tight truncate">Students Union</p>
-            <p className="text-purple-400 font-mono text-[10px] tracking-wide uppercase">
+            <p className="text-sky-400 font-mono text-[10px] tracking-wide uppercase">
               {teamName} Team Portal
             </p>
           </div>
@@ -842,7 +896,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               <button
                 key={label}
                 onClick={() => {
-                  setActiveNav(label);
+                  navigateTo(label);
                   if (window.innerWidth < 768) setSidebarOpen(false);
                 }}
                 className={`nav-item-rect ${isActive ? 'nav-active-rect' : ''}`}
@@ -865,7 +919,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-white truncate">{loginName}</p>
-              <p className="text-[10px] text-purple-400 font-mono truncate">{teamName} Team</p>
+              <p className="text-[10px] text-sky-400 font-mono truncate">{teamName} Team</p>
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -901,11 +955,27 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               title={sidebarOpen ? 'Close navigation' : 'Open navigation'}
               aria-label="Toggle navigation menu"
             >
-              <Menu className="w-5 h-5 text-purple-300" />
+              <Menu className="w-5 h-5 text-sky-300" />
             </button>
             <div>
               <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-black text-white uppercase tracking-wide">{activeNav}</h1>
+                <h1 className="text-xl font-black text-white uppercase tracking-wide">
+                  {activeNav === 'Leads'
+                    ? 'Domain Leads & Co-Leads'
+                    : activeNav === 'Coordinators'
+                    ? 'Coordinators'
+                    : activeNav === 'Core'
+                    ? 'Core Members'
+                    : activeNav}
+                </h1>
+                {['Leads', 'Coordinators', 'Core'].includes(activeNav) && (
+                  <button
+                    onClick={() => navigateTo('Overview')}
+                    className="text-xs px-2.5 py-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500/20 flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    ← Overview
+                  </button>
+                )}
                 <span className="badge-reactbits-new">
                   {teamName} Team
                 </span>
@@ -963,8 +1033,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           {/* Loading State */}
           {loading && (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-              <div className="w-9 h-9 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-3 shadow-[0_0_15px_rgba(147,51,234,0.35)]"></div>
-              <p className="text-xs font-mono text-purple-300">Loading {teamName} team data...</p>
+              <div className="w-9 h-9 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-3 shadow-[0_0_15px_rgba(14,165,233,0.35)]"></div>
+              <p className="text-xs font-mono text-sky-300">Loading {teamName} team data...</p>
             </div>
           )}
 
@@ -974,7 +1044,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           {!loading && activeNav === 'Overview' && (
             <div className="space-y-8 pb-12">
               {/* ── Hero Banner (Enlarged with Live Status & Quick Action Buttons) ── */}
-              <div className="rect-card rect-card-hover-pop p-6 sm:p-9 border-purple-500/30 bg-gradient-to-r from-[#170E2B]/95 via-[#1E1238]/90 to-[#120F1D]/95 shadow-[0_0_40px_rgba(147,51,234,0.2)]">
+              <div className="rect-card rect-card-hover-pop p-6 sm:p-9 border-sky-500/30 bg-gradient-to-r from-[#0C1E38]/95 via-[#102747]/90 to-[#0A172B]/95 shadow-[0_0_40px_rgba(14,165,233,0.2)]">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                   <div>
                     <div className="flex flex-wrap items-center gap-2.5 mb-3">
@@ -982,8 +1052,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
                         {teamName} Operations Portal
                       </span>
-                      <span className="text-xs text-purple-300 font-mono flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      <span className="text-xs text-sky-300 font-mono flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-sky-400" />
                         Students Union Domain Control
                       </span>
                       <span className="text-xs text-slate-400 font-mono hidden sm:inline-block">
@@ -992,7 +1062,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     </div>
                     <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight flex items-baseline gap-3.5 font-mono">
                       {members.length}{' '}
-                      <span className="text-base sm:text-xl font-normal text-purple-300">
+                      <span className="text-base sm:text-xl font-normal text-sky-300">
                         {teamName} Team Members
                       </span>
                     </h2>
@@ -1004,21 +1074,21 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   {/* Fast Action Buttons on Hero */}
                   <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 shrink-0">
                     <button
-                      onClick={() => setActiveNav('Attendance')}
-                      className="btn-purple-glow px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
+                      onClick={() => navigateTo('Attendance')}
+                      className="btn-sky-glow px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
                     >
                       <Calendar className="w-4 h-4" />
                       <span>Mark Attendance</span>
                     </button>
                     <button
-                      onClick={() => setActiveNav('Reports')}
+                      onClick={() => navigateTo('Reports')}
                       className="btn-rect-secondary px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
                     >
-                      <BarChart2 className="w-4 h-4 text-purple-300" />
+                      <BarChart2 className="w-4 h-4 text-sky-300" />
                       <span>Team Reports</span>
                     </button>
                     <button
-                      onClick={() => setActiveNav('Members')}
+                      onClick={() => navigateTo('Members')}
                       className="btn-rect-secondary px-4 py-2.5 text-xs font-mono flex items-center gap-2 cursor-pointer"
                     >
                       <Users className="w-4 h-4 text-indigo-300" />
@@ -1035,7 +1105,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   </div>
                   <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                     <p className="text-[10px] uppercase font-mono text-slate-400">Active Meetings</p>
-                    <p className="text-lg font-bold text-purple-300 font-mono mt-0.5">{sessions.length} Recorded</p>
+                    <p className="text-lg font-bold text-sky-300 font-mono mt-0.5">{sessions.length} Recorded</p>
                   </div>
                   <div className="px-3 py-2 rounded-md bg-white/[0.03] border border-white/5">
                     <p className="text-[10px] uppercase font-mono text-slate-400">Attendance Rate</p>
@@ -1051,33 +1121,33 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               {/* ── Stat Cards Grid (BIGGER Cards + Hover Pop) ── */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div
-                  onClick={() => setActiveNav('Members')}
+                  onClick={() => navigateTo('Members')}
                   className="rect-card rect-card-hover-pop p-6 cursor-pointer group min-h-[160px] flex flex-col justify-between"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
                       Team Roster
                     </span>
-                    <div className="w-10 h-10 rounded-md bg-purple-950/60 border border-purple-500/30 text-purple-400 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-md bg-sky-950/60 border border-sky-500/30 text-sky-400 flex items-center justify-center">
                       <Users className="w-5 h-5" />
                     </div>
                   </div>
                   <div>
-                    <div className="text-3xl font-black text-white font-mono group-hover:text-purple-300 transition-colors">
+                    <div className="text-3xl font-black text-white font-mono group-hover:text-sky-300 transition-colors">
                       {members.length}
                     </div>
                     <p className="text-xs text-slate-400 font-mono mt-1">
                       {leaderCount} in leadership roles
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-mono text-purple-300 mt-3 pt-2 border-t border-white/5">
+                  <div className="flex items-center gap-1 text-[11px] font-mono text-sky-300 mt-3 pt-2 border-t border-white/5">
                     <span>Explore members</span>
                     <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                   </div>
                 </div>
 
                 <div
-                  onClick={() => setActiveNav('Attendance')}
+                  onClick={() => navigateTo('Attendance')}
                   className="rect-card rect-card-hover-pop p-6 cursor-pointer group min-h-[160px] flex flex-col justify-between"
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -1103,7 +1173,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </div>
 
                 <div
-                  onClick={() => setActiveNav('Attendance')}
+                  onClick={() => navigateTo('Attendance')}
                   className="rect-card rect-card-hover-pop p-6 cursor-pointer group min-h-[160px] flex flex-col justify-between"
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -1140,7 +1210,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     </div>
                   </div>
                   <div>
-                    <div className="text-3xl font-black text-purple-300 font-mono">
+                    <div className="text-3xl font-black text-sky-300 font-mono">
                       {teamName}
                     </div>
                     <p className="text-xs text-slate-400 font-mono mt-1">
@@ -1158,7 +1228,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2.5">
-                    <Users className="w-5 h-5 text-purple-400" />
+                    <Users className="w-5 h-5 text-sky-400" />
                     {teamName} Team Structure & Roles
                   </h3>
                   <span className="text-xs font-mono text-slate-400">{members.length} Total Registered</span>
@@ -1167,21 +1237,20 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div
                     onClick={() => {
-                      setFilterRole('LEAD');
-                      setActiveNav('Members');
+                      navigateTo('Leads');
                     }}
-                    className="rect-card rect-card-hover-pop p-5 bg-purple-950/40 border-purple-500/30 cursor-pointer group"
+                    className="rect-card rect-card-hover-pop p-5 bg-sky-950/40 border-sky-500/30 cursor-pointer group"
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold uppercase font-mono text-purple-300">
+                      <span className="text-xs font-bold uppercase font-mono text-sky-300">
                         Domain Leads & Co-Leads
                       </span>
-                      <span className="text-xs font-mono font-bold text-purple-300 px-2 py-0.5 rounded bg-purple-900/50">
+                      <span className="text-xs font-mono font-bold text-sky-300 px-2 py-0.5 rounded bg-sky-900/50">
                         {teamLeads.length}
                       </span>
                     </div>
                     <div className="text-2xl font-black text-white font-mono mt-1">
-                      {teamLeads.length > 0 ? teamLeads.map(l => l.name).join(', ') : 'None assigned'}
+                      {teamLeads.length} Assigned
                     </div>
                     <p className="text-xs text-slate-400 font-mono mt-2">
                       Responsible for meeting coordination and team directives
@@ -1190,8 +1259,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                   <div
                     onClick={() => {
-                      setFilterRole('COORDINATOR');
-                      setActiveNav('Members');
+                      navigateTo('Coordinators');
                     }}
                     className="rect-card rect-card-hover-pop p-5 bg-emerald-950/40 border-emerald-500/30 cursor-pointer group"
                   >
@@ -1213,10 +1281,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                   <div
                     onClick={() => {
-                      setFilterRole('CORE');
-                      setActiveNav('Members');
+                      navigateTo('Core');
                     }}
-                    className="rect-card rect-card-hover-pop p-5 bg-[#141024] border-white/10 cursor-pointer group"
+                    className="rect-card rect-card-hover-pop p-5 bg-[#0B172B] border-white/10 cursor-pointer group"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold uppercase font-mono text-slate-300">
@@ -1237,7 +1304,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               </div>
 
               {/* ── Last 3 Sessions Absentees Pulse (Team Scoped) ── */}
-              <div className="rect-card-elevated p-6 border-purple-500/25">
+              <div className="rect-card-elevated p-6 border-sky-500/25">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-white/10">
                   <div>
                     <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2.5">
@@ -1252,7 +1319,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     onClick={() => setActiveNav('Attendance')}
                     className="btn-rect-secondary px-3.5 py-1.5 text-xs font-mono flex items-center gap-2 cursor-pointer self-start sm:self-auto"
                   >
-                    <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
                     <span>View All Meetings</span>
                   </button>
                 </div>
@@ -1263,7 +1330,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     <p>No recent meetings recorded for {teamName} team yet.</p>
                     <button
                       onClick={openCreateMeeting}
-                      className="btn-purple-glow px-4 py-2 mt-3 text-xs inline-flex items-center gap-2 cursor-pointer"
+                      className="btn-sky-glow px-4 py-2 mt-3 text-xs inline-flex items-center gap-2 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       Create New Meeting
@@ -1272,13 +1339,17 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                     {teamRecentAbsentees.slice(0, 3).map((session: any, idx: number) => {
-                      const targetCount = session.totalTargetCount || (session.presentCount + session.absentCount) || 1;
+                      const teams = (session.team || teamName).split(',').map((t: string) => t.trim().toUpperCase());
+                      const targetMembers = (session.team === 'ALL' || teams.includes('ALL'))
+                        ? members
+                        : members.filter(m => teams.includes(m.team?.toUpperCase() || ''));
+                      const targetCount = session.totalTargetCount || (targetMembers.length > 0 ? targetMembers.length : (session.presentCount + session.absentCount)) || 1;
                       const presentPct = Math.round(((session.presentCount || 0) / Math.max(1, targetCount)) * 100);
 
                       return (
                         <div
                           key={session.id || idx}
-                          className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between border-white/10 hover:border-purple-400/50"
+                          className="rect-card rect-card-hover-pop p-5 flex flex-col justify-between border-white/10 hover:border-sky-400/50"
                         >
                           <div>
                             <div className="flex items-center justify-between mb-2">
@@ -1348,12 +1419,12 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           <button
                             onClick={() => {
                               setSelectedSessionId(session.id);
-                              setActiveNav('Attendance');
+                              navigateTo('Attendance');
                             }}
-                            className="mt-4 w-full btn-rect-secondary py-2 text-xs font-mono flex items-center justify-center gap-2 cursor-pointer hover:border-purple-400/50"
+                            className="mt-4 w-full btn-rect-secondary py-2 text-xs font-mono flex items-center justify-center gap-2 cursor-pointer hover:border-sky-400/50"
                           >
                             <span>Mark / Edit Attendance</span>
-                            <ChevronRight className="w-3.5 h-3.5 text-purple-300" />
+                            <ChevronRight className="w-3.5 h-3.5 text-sky-300" />
                           </button>
                         </div>
                       );
@@ -1365,28 +1436,28 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
               {/* ── Operations & Fast Navigation Launchpad (3 Big Cards) ── */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <div
-                  onClick={() => setActiveNav('Attendance')}
-                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-purple-500/20 hover:border-purple-500/60 flex flex-col justify-between min-h-[170px]"
+                  onClick={() => navigateTo('Attendance')}
+                  className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-sky-500/20 hover:border-sky-500/60 flex flex-col justify-between min-h-[170px]"
                 >
                   <div>
-                    <div className="w-10 h-10 rounded-md bg-purple-950/60 border border-purple-500/30 text-purple-400 flex items-center justify-center mb-3">
+                    <div className="w-10 h-10 rounded-md bg-sky-950/60 border border-sky-500/30 text-sky-400 flex items-center justify-center mb-3">
                       <Calendar className="w-5 h-5" />
                     </div>
-                    <h4 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors">
+                    <h4 className="text-base font-bold text-white group-hover:text-sky-300 transition-colors">
                       Attendance Marking Desk
                     </h4>
                     <p className="text-xs text-slate-400 font-mono mt-1">
                       Quickly mark Present, Absent, or Informed status for your team members with live counts.
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 text-xs font-mono text-purple-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
+                  <div className="flex items-center gap-1 text-xs font-mono text-sky-300 mt-4 font-semibold group-hover:translate-x-1 transition-transform">
                     <span>Open Attendance</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </div>
                 </div>
 
                 <div
-                  onClick={() => setActiveNav('Reports')}
+                  onClick={() => navigateTo('Reports')}
                   className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-pink-500/20 hover:border-pink-500/60 flex flex-col justify-between min-h-[170px]"
                 >
                   <div>
@@ -1407,7 +1478,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </div>
 
                 <div
-                  onClick={() => setActiveNav('Members')}
+                  onClick={() => navigateTo('Members')}
                   className="rect-card rect-card-hover-pop p-6 cursor-pointer group border-indigo-500/20 hover:border-indigo-500/60 flex flex-col justify-between min-h-[170px]"
                 >
                   <div>
@@ -1431,9 +1502,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           )}
 
           {/* ══════════════════════════════════════════════
-              VIEW 2: MEMBERS
+              VIEW 2: MEMBERS & SPECIFIC ROLE DIRECTORIES
              ══════════════════════════════════════════════ */}
-          {!loading && activeNav === 'Members' && (
+          {!loading && ['Members', 'Leads', 'Coordinators', 'Core'].includes(activeNav) && (
             <div className="space-y-5">
               {/* Filter Controls Card */}
               <div className="rect-card p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
@@ -1457,21 +1528,35 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   )}
                 </div>
 
-                {/* Role Dropdown */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono text-purple-300 flex items-center gap-1 uppercase tracking-wider">
-                    <Filter className="w-3 h-3 text-purple-400" /> Role:
-                  </span>
-                  <select
-                    value={filterRole}
-                    onChange={(e) => setFilterRole(e.target.value)}
-                    className="rect-input py-2 px-3 text-xs text-slate-200 cursor-pointer bg-[#0A0713]"
-                  >
-                    {['ALL', 'LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(role => (
-                      <option key={role} value={role} className="bg-[#120F1D] text-slate-200">{role}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Role Controls */}
+                {activeNav === 'Members' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-sky-300 flex items-center gap-1 uppercase tracking-wider">
+                      <Filter className="w-3 h-3 text-sky-400" /> Role:
+                    </span>
+                    <select
+                      value={filterRole}
+                      onChange={(e) => setFilterRole(e.target.value)}
+                      className="rect-input py-2 px-3 text-xs text-slate-200 cursor-pointer bg-[#050B14]"
+                    >
+                      {['ALL', 'LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(role => (
+                        <option key={role} value={role} className="bg-[#0B172B] text-slate-200">{role}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <span className="badge-sky text-xs font-mono">
+                      Filtered: {activeNav === 'Leads' ? 'Domain Leads & Co-Leads' : activeNav === 'Coordinators' ? 'Coordinators' : 'Core Members'}
+                    </span>
+                    <button
+                      onClick={() => navigateTo('Members')}
+                      className="text-xs text-slate-400 hover:text-white underline font-mono cursor-pointer"
+                    >
+                      View All Members
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Members Table Card */}
@@ -1479,12 +1564,32 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
                   <div>
                     <h3 className="text-sm font-bold text-white uppercase tracking-wide">
-                      {teamName} Roster ({sortedMembers.length})
+                      {activeNav === 'Leads'
+                        ? `${teamName} Leads & Co-Leads`
+                        : activeNav === 'Coordinators'
+                        ? `${teamName} Coordinators`
+                        : activeNav === 'Core'
+                        ? `${teamName} Core Members`
+                        : `${teamName} Roster`} ({sortedMembers.length})
                     </h3>
                     <p className="text-xs text-slate-400 font-mono mt-0.5">
-                      Showing only members registered in your team
+                      {activeNav === 'Leads'
+                        ? 'Leadership directory for meeting coordination & directives'
+                        : activeNav === 'Coordinators'
+                        ? 'Assisting coordinators for day-to-day session tracking'
+                        : activeNav === 'Core'
+                        ? 'Active team contributors and operations members'
+                        : 'Showing registered members in your team'}
                     </p>
                   </div>
+                  {['Leads', 'Coordinators', 'Core'].includes(activeNav) && (
+                    <button
+                      onClick={() => navigateTo('Overview')}
+                      className="btn-rect-secondary px-3 py-1.5 text-xs font-mono text-sky-400 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>← Back to Overview</span>
+                    </button>
+                  )}
                 </div>
 
                 {filteredMembers.length === 0 ? (
@@ -1501,7 +1606,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           setSearchMemberQuery('');
                           setFilterRole('ALL');
                         }}
-                        className="mt-3 text-xs font-mono text-purple-400 hover:text-purple-300 underline cursor-pointer"
+                        className="mt-3 text-xs font-mono text-sky-400 hover:text-sky-300 underline cursor-pointer"
                       >
                         Reset filters
                       </button>
@@ -1510,7 +1615,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
-                      <thead className="bg-[#0A0713]/90 border-b border-white/10 text-slate-400 uppercase tracking-wider font-mono">
+                      <thead className="bg-[#050B14]/90 border-b border-white/10 text-slate-400 uppercase tracking-wider font-mono">
                         <tr>
                           {['Member', 'Role', 'Roll Number', 'Department', 'Year', 'Phone']
                             .filter(header => !hiddenColumns.includes(header))
@@ -1543,10 +1648,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                 </th>
                               );
                             })}
-                          <th className="px-4 sm:px-6 py-3.5 text-right w-24 sticky right-0 bg-[#0A0713]/90">
+                          <th className="px-4 sm:px-6 py-3.5 text-right w-24 sticky right-0 bg-[#050B14]/90">
                             {hiddenColumns.length > 0 ? (
                               <div className="relative group inline-block text-left">
-                                <button className="p-1 text-slate-400 hover:text-purple-400 hover:bg-purple-500/10 rounded transition-all cursor-pointer" title="Restore columns">
+                                <button className="p-1 text-slate-400 hover:text-sky-400 hover:bg-sky-500/10 rounded transition-all cursor-pointer" title="Restore columns">
                                   <Plus className="w-4 h-4" />
                                 </button>
                                 <div className="absolute right-0 top-full mt-1 w-40 rect-card-elevated p-1.5 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
@@ -1555,7 +1660,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     <button
                                       key={col}
                                       onClick={() => setHiddenColumns(prev => prev.filter(c => c !== col))}
-                                      className="w-full text-left px-2 py-1.5 text-xs text-slate-300 hover:bg-purple-950/40 hover:text-purple-300 rounded flex items-center justify-between group/btn transition-colors cursor-pointer"
+                                      className="w-full text-left px-2 py-1.5 text-xs text-slate-300 hover:bg-sky-950/40 hover:text-sky-300 rounded flex items-center justify-between group/btn transition-colors cursor-pointer"
                                     >
                                       {col}
                                       <Plus className="w-3 h-3 opacity-0 group-hover/btn:opacity-100" />
@@ -1569,7 +1674,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       </thead>
                       <tbody className="divide-y divide-white/5">
                         {sortedMembers.map((m) => (
-                          <tr key={m.id} className="hover:bg-purple-950/20 transition-colors">
+                          <tr key={m.id} className="hover:bg-sky-950/20 transition-colors">
                             {!hiddenColumns.includes('Member') && (
                               <td className="px-6 py-3.5">
                                 <div className="flex items-center gap-3">
@@ -1611,19 +1716,19 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                               </td>
                             )}
 
-                            <td className="px-3 sm:px-6 py-3.5 text-right sticky right-0 bg-[#0E0B18]/90 backdrop-blur-md">
+                            <td className="px-3 sm:px-6 py-3.5 text-right sticky right-0 bg-[#050B14]/90 backdrop-blur-md">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => handleOpenHistory(m)}
                                   title="View Attendance History"
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-purple-300 hover:bg-purple-500/20 transition-colors cursor-pointer"
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => handleOpenEdit(m)}
                                   title="Edit Member Details"
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-purple-300 hover:bg-purple-500/20 transition-colors cursor-pointer"
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer"
                                 >
                                   <Edit3 className="w-4 h-4" />
                                 </button>
@@ -1656,7 +1761,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         <div>
                           <div className="flex items-center gap-2">
                             <h3 className="text-base font-bold text-white uppercase tracking-wide">Last 3 Sessions Absentees</h3>
-                            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-purple-950/60 text-purple-300 border border-purple-500/30 font-mono font-bold uppercase">
+                            <span className="text-[10px] px-2 py-0.5 rounded-sm bg-sky-950/60 text-sky-300 border border-sky-500/30 font-mono font-bold uppercase">
                               {recentAbsentees.length} {recentAbsentees.length === 1 ? 'session' : 'sessions'}
                             </span>
                           </div>
@@ -1669,10 +1774,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                     {absenteesLoading ? (
                       <div className="py-8 flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
                       </div>
                     ) : recentAbsentees.length === 0 ? (
-                      <div className="py-8 text-center bg-[#0A0713]/50 rounded-md border border-dashed border-white/10">
+                      <div className="py-8 text-center bg-[#050B14]/50 rounded-md border border-dashed border-white/10">
                         <UserX className="w-8 h-8 mx-auto mb-2 text-slate-600" />
                         <p className="text-sm font-mono text-slate-300">No previous sessions available.</p>
                         <p className="text-xs text-slate-500 font-mono mt-0.5">
@@ -1686,13 +1791,13 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           return (
                             <div
                               key={s.id}
-                              className="rect-card p-4 flex flex-col justify-between hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all"
+                              className="rect-card p-4 flex flex-col justify-between hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(14,165,233,0.12)] transition-all"
                             >
                               <div>
                                 <div className="flex items-start justify-between gap-2 mb-2">
                                   <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                      <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
+                                      <span className="px-2 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
                                         {s.team.split(',').join(', ')}
                                       </span>
                                       <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold font-mono uppercase ${
@@ -1714,11 +1819,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                                 <div className="flex items-center gap-3 text-xs text-slate-400 font-mono mb-3">
                                   <span className="flex items-center gap-1">
-                                    <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
                                     {s.date}
                                   </span>
                                   <span className="flex items-center gap-1">
-                                    <Clock className="w-3.5 h-3.5 text-purple-400" />
+                                    <Clock className="w-3.5 h-3.5 text-sky-400" />
                                     {s.startTime} {s.endTime ? `- ${s.endTime}` : ''}
                                   </span>
                                 </div>
@@ -1728,7 +1833,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     <span>Absentee List ({s.absentees.length})</span>
                                     <button
                                       onClick={() => setExpandedSessionIds(prev => ({ ...prev, [s.id]: !isExpanded }))}
-                                      className="text-purple-400 hover:text-purple-300 font-semibold cursor-pointer flex items-center gap-0.5"
+                                      className="text-sky-400 hover:text-sky-300 font-semibold cursor-pointer flex items-center gap-0.5"
                                     >
                                       {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                       {isExpanded ? 'Hide' : 'Show'}
@@ -1741,14 +1846,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                         🎉 100% Attendance — Zero Absentees!
                                       </div>
                                     ) : (
-                                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-sm border border-white/10 bg-[#0A0713] p-2 custom-scrollbar">
+                                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-sm border border-white/10 bg-[#050B14] p-2 custom-scrollbar">
                                         {s.absentees.map((ab: any) => (
                                           <div key={ab.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded-sm hover:bg-white/5">
                                             <div className="min-w-0 flex-1 pr-2">
                                               <p className="font-semibold text-white truncate">{ab.name}</p>
                                               <p className="text-[10px] text-slate-400 font-mono truncate">{ab.rollNo || ab.department || 'No Roll No'}</p>
                                             </div>
-                                            <span className="text-[9px] px-1.5 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm font-mono shrink-0">
+                                            <span className="text-[9px] px-1.5 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 rounded-sm font-mono shrink-0">
                                               {ab.team}
                                             </span>
                                           </div>
@@ -1761,7 +1866,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                               <button
                                 onClick={() => setSelectedSessionId(s.id)}
-                                className="btn-purple-glow w-full mt-2 py-2 px-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                                className="btn-sky-glow w-full mt-2 py-2 px-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
                               >
                                 View & Manage Session
                                 <ArrowRight className="w-3.5 h-3.5" />
@@ -1793,7 +1898,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       </div>
                       <button
                         onClick={openCreateMeeting}
-                        className="btn-purple-glow shrink-0 px-4 py-2 text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer"
+                        className="btn-sky-glow shrink-0 px-4 py-2 text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
                         <span>New Session</span>
@@ -1803,7 +1908,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                   {sessions.length === 0 ? (
                     <div className="rect-card-elevated p-8 text-center flex-1 flex flex-col items-center justify-center">
-                      <div className="w-14 h-14 bg-purple-950/60 text-purple-400 border border-purple-500/30 rounded-md flex items-center justify-center mb-4 mx-auto">
+                      <div className="w-14 h-14 bg-sky-950/60 text-sky-400 border border-sky-500/30 rounded-md flex items-center justify-center mb-4 mx-auto">
                         <Calendar className="w-7 h-7" />
                       </div>
                       <h3 className="text-base font-bold text-white mb-2 uppercase tracking-wide">No Sessions Yet</h3>
@@ -1829,12 +1934,12 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           <div
                             key={session.id}
                             onClick={() => setSelectedSessionId(session.id)}
-                            className="rect-card p-5 hover:border-purple-500/40 hover:shadow-[0_0_20px_rgba(147,51,234,0.12)] transition-all cursor-pointer group"
+                            className="rect-card p-5 hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(14,165,233,0.12)] transition-all cursor-pointer group"
                           >
                             <div className="flex items-start justify-between mb-4">
                               <div>
                                 <div className="flex items-center gap-2 mb-2">
-                                  <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
+                                  <span className="px-2 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
                                     {session.team.split(',').join(', ')}
                                   </span>
                                   <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold font-mono uppercase ${
@@ -1845,7 +1950,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     {session.sessionSlot || 'FN'}
                                   </span>
                                 </div>
-                                <h3 className="text-base font-bold text-white group-hover:text-purple-300 transition-colors">
+                                <h3 className="text-base font-bold text-white group-hover:text-sky-300 transition-colors">
                                   {session.title}
                                 </h3>
                               </div>
@@ -1860,7 +1965,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 )}
-                                <div className="bg-purple-950/60 border border-purple-500/30 text-purple-400 p-2 rounded-sm group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                                <div className="bg-sky-950/60 border border-sky-500/30 text-sky-400 p-2 rounded-sm group-hover:bg-sky-600 group-hover:text-white transition-colors">
                                   <ArrowRight className="w-4 h-4" />
                                 </div>
                               </div>
@@ -1868,17 +1973,17 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                             <div className="flex items-center gap-6 text-xs text-slate-400 font-mono mb-4">
                               <div className="flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                                <Calendar className="w-3.5 h-3.5 text-sky-400" />
                                 {session.date}
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-purple-400" />
+                                <Clock className="w-3.5 h-3.5 text-sky-400" />
                                 {session.startTime} {session.endTime ? `- ${session.endTime}` : ''}
                               </div>
                             </div>
 
                             {session.notes && (
-                              <p className="text-xs text-slate-300 mb-5 line-clamp-2 bg-[#0A0713] p-2.5 rounded-sm border border-white/5 font-mono">
+                              <p className="text-xs text-slate-300 mb-5 line-clamp-2 bg-[#050B14] p-2.5 rounded-sm border border-white/5 font-mono">
                                 {session.notes}
                               </p>
                             )}
@@ -1886,11 +1991,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             <div>
                               <div className="flex items-center justify-between text-xs font-mono mb-1.5">
                                 <span className="text-slate-400">Attendance Progress</span>
-                                <span className="text-purple-300 font-bold">{markedCount} / {targetCount} Marked</span>
+                                <span className="text-sky-300 font-bold">{markedCount} / {targetCount} Marked</span>
                               </div>
                               <div className="h-1.5 w-full bg-slate-900 rounded-none overflow-hidden border border-white/5">
                                 <div
-                                  className={`h-full transition-all duration-700 ${progress === 100 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-purple-600 to-indigo-500'}`}
+                                  className={`h-full transition-all duration-700 ${progress === 100 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-sky-500 to-cyan-400'}`}
                                   style={{ width: `${progress}%` }}
                                 />
                               </div>
@@ -1911,19 +2016,19 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           onClick={() => setSelectedSessionId('')}
                           className="btn-rect-secondary p-2 cursor-pointer"
                         >
-                          <ChevronLeft className="w-5 h-5 text-purple-300" />
+                          <ChevronLeft className="w-5 h-5 text-sky-300" />
                         </button>
                         <div>
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-1">
-                            <span className="px-2 py-0.5 bg-[#1B1430] text-purple-300 border border-purple-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
+                            <span className="px-2 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
                               {activeSession.team.split(',').join(', ')}
                             </span>
                             <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
-                              <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                              <Calendar className="w-3.5 h-3.5 text-sky-400" />
                               {activeSession.date}
                             </span>
                             <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 text-purple-400" />
+                              <Clock className="w-3.5 h-3.5 text-sky-400" />
                               {activeSession.startTime} {activeSession.endTime ? `- ${activeSession.endTime}` : ''}
                             </span>
                           </div>
@@ -1954,8 +2059,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       ) : (
                         activeSession.notes && (
                           <div className="flex items-center gap-2 mt-2 w-full lg:w-3/4">
-                            <div className="w-full text-xs text-slate-300 bg-[#0A0713] px-3 py-2 rounded-sm border border-white/5 font-mono leading-relaxed whitespace-pre-wrap">
-                              <span className="font-bold text-purple-300 mr-2 uppercase">Remarks:</span>
+                            <div className="w-full text-xs text-slate-300 bg-[#050B14] px-3 py-2 rounded-sm border border-white/5 font-mono leading-relaxed whitespace-pre-wrap">
+                              <span className="font-bold text-sky-300 mr-2 uppercase">Remarks:</span>
                               {activeSession.notes}
                             </div>
                           </div>
@@ -1984,11 +2089,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           </div>
                         </div>
 
-                        <div className="p-3 rounded-md bg-purple-950/40 border border-purple-500/30">
-                          <span className="text-[10px] font-mono font-bold text-purple-300 uppercase tracking-wide">
+                        <div className="p-3 rounded-md bg-sky-950/40 border border-sky-500/30">
+                          <span className="text-[10px] font-mono font-bold text-sky-300 uppercase tracking-wide">
                             Informed
                           </span>
-                          <div className="text-xl font-black text-purple-200 font-mono">
+                          <div className="text-xl font-black text-sky-200 font-mono">
                             {activeSessionStats.informed}
                           </div>
                         </div>
@@ -2000,7 +2105,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   <div className="rect-card-elevated overflow-hidden flex-1 flex flex-col min-h-0 mt-2">
                     <div className="overflow-auto flex-1 p-0 custom-scrollbar">
                       <table className="w-full text-left border-collapse text-xs">
-                        <thead className="bg-[#0A0713]/90 sticky top-0 z-10 border-b border-white/10 font-mono">
+                        <thead className="bg-[#050B14]/90 sticky top-0 z-10 border-b border-white/10 font-mono">
                           <tr>
                             <th className="px-3 sm:px-6 py-3 text-slate-400 uppercase tracking-wider">Member</th>
                             <th className="hidden sm:table-cell px-6 py-3 text-slate-400 uppercase tracking-wider">Role</th>
@@ -2033,7 +2138,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           {sessionMembersList.map(m => {
                             const status = m.status;
                             return (
-                              <tr key={m.id} className="hover:bg-purple-950/20 transition-colors">
+                              <tr key={m.id} className="hover:bg-sky-950/20 transition-colors">
                                 <td className="px-3 sm:px-6 py-3 sm:whitespace-nowrap">
                                   <p className="font-semibold text-white">{m.name}</p>
                                   <p className="text-xs text-slate-400 font-mono">{m.rollNo || 'No Roll No'}<span className="sm:hidden"> · {m.role}</span></p>
@@ -2074,8 +2179,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                           disabled={markingIds.has(m.id)}
                                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer ${
                                             status === 'INFORMED'
-                                              ? 'bg-purple-600 text-white shadow-[0_0_12px_rgba(147,51,234,0.5)] border border-purple-400'
-                                              : 'bg-white/5 text-slate-400 hover:text-purple-300 hover:bg-purple-950/40 border border-white/10'
+                                              ? 'bg-sky-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.5)] border border-sky-400'
+                                              : 'bg-white/5 text-slate-400 hover:text-sky-300 hover:bg-sky-950/40 border border-white/10'
                                           }`}
                                         >
                                           <FileText className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Informed</span>
@@ -2085,7 +2190,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                       <span className={`px-3 py-1 rounded-sm text-xs font-bold font-mono uppercase ${
                                         status === 'PRESENT' ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40' :
                                         status === 'ABSENT' ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40' :
-                                        'bg-purple-950/60 text-purple-300 border border-purple-500/40'
+                                        'bg-sky-950/60 text-sky-300 border border-sky-500/40'
                                       }`}>
                                         {status.charAt(0) + status.slice(1).toLowerCase()}
                                       </span>
@@ -2139,13 +2244,13 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             <div className="p-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
               {historyLoading ? (
                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
-                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-2 shadow-[0_0_12px_rgba(147,51,234,0.4)]" />
-                  <p className="text-xs font-mono text-purple-300">Loading attendance details...</p>
+                  <div className="w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-2 shadow-[0_0_12px_rgba(14,165,233,0.4)]" />
+                  <p className="text-xs font-mono text-sky-300">Loading attendance details...</p>
                 </div>
               ) : selectedMemberHistory ? (
                 <div className="space-y-4">
                   {/* Member Profile Card */}
-                  <div className="flex items-center gap-3 p-4 rounded-md rect-card bg-[#141024]/70">
+                  <div className="flex items-center gap-3 p-4 rounded-md rect-card bg-[#0B172B]/70">
                     <div
                       className="w-10 h-10 rounded-md flex items-center justify-center text-white text-sm font-bold shrink-0"
                       style={{ background: avatarColor(selectedMemberHistory.member.name) }}
@@ -2168,7 +2273,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-lg font-black font-mono text-purple-400">
+                      <span className="text-lg font-black font-mono text-sky-400">
                         {selectedMemberHistory.stats.presentPct}%
                       </span>
                       <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Overall Rate</p>
@@ -2176,7 +2281,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   </div>
 
                   {/* Detailed Member Info */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-md rect-card bg-[#0A0713]">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-md rect-card bg-[#050B14]">
                     <div>
                       <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Department</p>
                       <p className="text-xs font-semibold text-slate-200 mt-0.5">{selectedMemberHistory.member.department || '—'}</p>
@@ -2191,7 +2296,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     </div>
                     <div>
                       <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Team</p>
-                      <p className="text-xs font-semibold text-purple-300 mt-0.5 font-mono">{selectedMemberHistory.member.team || '—'}</p>
+                      <p className="text-xs font-semibold text-sky-300 mt-0.5 font-mono">{selectedMemberHistory.member.team || '—'}</p>
                     </div>
                     <div>
                       <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Joined</p>
@@ -2223,7 +2328,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       </div>
                       <span className="text-[9px] uppercase">Absent</span>
                     </div>
-                    <div className="p-2.5 rounded-sm bg-purple-950/40 border border-purple-500/30 text-purple-300">
+                    <div className="p-2.5 rounded-sm bg-sky-950/40 border border-sky-500/30 text-sky-300">
                       <div className="text-xs font-bold">
                         {selectedMemberHistory.stats.informed}
                       </div>
@@ -2247,7 +2352,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           return (
                             <div
                               key={i}
-                              className="p-3 rounded-md rect-card hover:border-purple-500/30 flex items-center justify-between text-xs"
+                              className="p-3 rounded-md rect-card hover:border-sky-500/30 flex items-center justify-between text-xs"
                             >
                               <div>
                                 <p className="font-semibold text-white">{h.title}</p>
@@ -2310,14 +2415,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             {/* Modal Form */}
             <form onSubmit={handleSaveMemberEdit} className="p-6 space-y-4">
               {/* Member & Locked Team Info */}
-              <div className="p-3 bg-[#0A0713] rounded-md border border-white/10 flex items-center justify-between text-xs">
+              <div className="p-3 bg-[#050B14] rounded-md border border-white/10 flex items-center justify-between text-xs">
                 <div>
                   <span className="font-semibold text-white">{editingMember.name}</span>
                   <span className={`ml-2 px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase ${ROLE_STYLE[editingMember.role] || ''}`}>
                     {editingMember.role}
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded-sm text-[10px] font-mono font-bold bg-purple-950/60 text-purple-300 border border-purple-500/30 uppercase">
+                <span className="px-2 py-0.5 rounded-sm text-[10px] font-mono font-bold bg-sky-950/60 text-sky-300 border border-sky-500/30 uppercase">
                   Team: {teamName}
                 </span>
               </div>
@@ -2403,7 +2508,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 <button
                   type="submit"
                   disabled={editSaving}
-                  className="btn-purple-glow px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+                  className="btn-sky-glow px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
                 >
                   {editSaving ? 'Saving...' : 'Save Changes'}
                 </button>
@@ -2484,11 +2589,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       else if (slot === 'EV') startTime = '17:00';
                       setMeetingForm((p) => ({ ...p, sessionSlot: slot, startTime }));
                     }}
-                    className="rect-input w-full px-3 py-2 text-xs text-slate-200 bg-[#0A0713] cursor-pointer"
+                    className="rect-input w-full px-3 py-2 text-xs text-slate-200 bg-[#050B14] cursor-pointer"
                   >
-                    <option value="FN" className="bg-[#120F1D] text-slate-200">FN (Morning)</option>
-                    <option value="AN" className="bg-[#120F1D] text-slate-200">AN (Afternoon)</option>
-                    <option value="EV" className="bg-[#120F1D] text-slate-200">EV (Evening)</option>
+                    <option value="FN" className="bg-[#0B172B] text-slate-200">FN (Morning)</option>
+                    <option value="AN" className="bg-[#0B172B] text-slate-200">AN (Afternoon)</option>
+                    <option value="EV" className="bg-[#0B172B] text-slate-200">EV (Evening)</option>
                   </select>
                 </div>
               </div>
@@ -2546,7 +2651,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 <button
                   type="submit"
                   disabled={meetingSaving}
-                  className="btn-purple-glow px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
+                  className="btn-sky-glow px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-50 cursor-pointer"
                 >
                   {meetingSaving ? 'Saving...' : editingMeeting ? 'Save Changes' : 'Create Meeting'}
                 </button>
