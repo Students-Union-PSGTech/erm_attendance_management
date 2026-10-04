@@ -1,9 +1,8 @@
 import type { Request, Response } from 'express';
 import { Member } from '../models/Member';
-import { AttendanceSession } from '../models/Session';
 import { resolveTeamScope } from '../middleware/auth';
 import { importMembers, removeMembersFromSessions } from '../services/member.service';
-import { recordsToObject } from '../services/stats.service';
+import { memberHistory } from '../services/stats.service';
 import { membersToCsv, parseMembersCsv } from '../utils/csv';
 import { newId } from '../utils/ids';
 import { badRequest, conflict, notFound } from '../utils/httpError';
@@ -52,42 +51,10 @@ export async function getMember(req: Request, res: Response) {
 }
 
 // GET /api/members/:id/attendance   (FR-2.8: attendance history for the detail drawer)
+// Every meeting held for the member's vertical; unmarked = ABSENT (same numbers as /stats/attendance)
 export async function getMemberAttendance(req: Request, res: Response) {
   const member = await findVisibleMember(req);
-  const id = member._id as string;
-
-  const sessions = await AttendanceSession.find(
-    { [`records.${id}`]: { $exists: true } },
-    { date: 1, startTime: 1, endTime: 1, sessionSlot: 1, title: 1, team: 1, records: 1 },
-  )
-    .sort({ date: -1, startTime: -1 })
-    .lean();
-
-  const history = sessions.map((s) => ({
-    sessionId: s._id,
-    date: s.date,
-    startTime: s.startTime,
-    ...(s.endTime && { endTime: s.endTime }),
-    sessionSlot: s.sessionSlot,
-    title: s.title,
-    team: s.team,
-    ...recordsToObject(s.records as never)[id],
-  }));
-
-  const count = (status: string) => history.filter((h) => h.status === status).length;
-  const total = history.length;
-  const present = count('PRESENT');
-  res.json({
-    member: member.toJSON(),
-    stats: {
-      total,
-      present,
-      absent: count('ABSENT'),
-      informed: count('INFORMED'),
-      presentPct: total ? Math.round((present / total) * 1000) / 10 : 0,
-    },
-    history,
-  });
+  res.json({ member: member.toJSON(), ...(await memberHistory(member)) });
 }
 
 // POST /api/members   (admin, FR-2.4)

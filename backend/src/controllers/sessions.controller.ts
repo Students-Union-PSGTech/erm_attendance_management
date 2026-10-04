@@ -5,6 +5,8 @@ import { currentUser, resolveTeamScope } from '../middleware/auth';
 import { recordsToObject } from '../services/stats.service';
 import { newId } from '../utils/ids';
 import { slotFromTime } from '../utils/normalize';
+import { assertStarted } from '../utils/sessionTime';
+import { sessionIncludesTeam, sessionTeamFilter } from '../utils/sessionTeams';
 import { badRequest, conflict, forbidden, notFound } from '../utils/httpError';
 import { idParamSchema } from '../validators/member.validators';
 import {
@@ -69,11 +71,11 @@ function assertCanManage(user: AuthUser, session: { team: string }) {
 /**
  * Who may mark a member in a session:
  *   admin - anyone, any session
- *   team  - their own members, in their own team's sessions and in ALL sessions
+ *   team  - their own members, in any meeting their team attends (own, ALL, or combos like DESIGN,TECH)
  */
 async function assertCanMark(user: AuthUser, session: { team: string }, memberId: string) {
   if (user.role === 'admin') return;
-  if (session.team !== user.team && session.team !== 'ALL') {
+  if (!sessionIncludesTeam(session.team, user.team!)) {
     throw forbidden("You can only mark attendance in your own team's or ALL sessions");
   }
   const member = await Member.findById(memberId, { team: 1 }).lean();
@@ -105,12 +107,9 @@ export async function querySessions(req: Request) {
   const scope = resolveTeamScope(req);
 
   const filter: Record<string, unknown> = {};
-  if (user.role === 'team') {
-    filter.$or = [{ team: 'ALL' }, { team: { $regex: new RegExp(`(?:^|,)\\s*${scope}\\s*(?:,|$)`, 'i') } }];
-  } else if (q.team) {
-    if (q.team === 'ALL') filter.team = 'ALL';
-    else filter.$or = [{ team: 'ALL' }, { team: { $regex: new RegExp(`(?:^|,)\\s*${q.team}\\s*(?:,|$)`, 'i') } }];
-  }
+  // A team sees ALL meetings, its own, and admin-created combos that include it ("DESIGN,TECH")
+  if (user.role === 'team') Object.assign(filter, sessionTeamFilter(scope!));
+  else if (q.team) Object.assign(filter, q.team === 'ALL' ? { team: 'ALL' } : sessionTeamFilter(q.team));
   if (q.from || q.to) filter.date = { ...(q.from && { $gte: q.from }), ...(q.to && { $lte: q.to }) };
 
   const sessions = await AttendanceSession.find(filter).sort({ date: -1, startTime: -1 }).lean();
@@ -130,7 +129,7 @@ export async function getSession(req: Request, res: Response) {
   const user = currentUser(req);
   const session = await AttendanceSession.findById(id).lean();
   if (!session) throw notFound('Session not found');
-  if (user.role === 'team' && session.team !== 'ALL' && session.team !== user.team) {
+  if (user.role === 'team' && !sessionIncludesTeam(session.team as string, user.team!)) {
     throw notFound('Session not found');
   }
   const scoped = await scopeSession(session, user.role === 'team' ? user.team : undefined);
@@ -148,6 +147,9 @@ export async function createSession(req: Request, res: Response) {
     if (data.team !== 'ALL' && data.team !== user.team) throw forbidden("You can only create your own team's sessions");
     data.team = user.team!;
   }
+
+  // No attendance can be recorded before the meeting starts
+  if (Object.keys(records).length) assertStarted({ date: data.date, startTime: data.startTime });
 
   const _id = id ?? newId('session');
   if (await AttendanceSession.exists({ _id })) throw conflict('Session id already exists');
@@ -168,7 +170,7 @@ export async function updateSession(req: Request, res: Response) {
   const user = currentUser(req);
   const { records, endTime, ...data } = req.body as SessionUpdateInput;
 
-  const existing = await AttendanceSession.findById(id, { startTime: 1, endTime: 1, team: 1 }).lean();
+  const existing = await AttendanceSession.findById(id, { date: 1, startTime: 1, endTime: 1, team: 1 }).lean();
   if (!existing) throw notFound('Session not found');
   assertCanManage(user, existing);
   if (user.role === 'team' && data.team && data.team !== user.team) {
@@ -186,6 +188,9 @@ export async function updateSession(req: Request, res: Response) {
 
   const $set: Record<string, unknown> = { ...data };
   if (endTime) $set.endTime = endTime;
+  if (records && Object.keys(records).length) {
+    assertStarted({ date: data.date ?? existing.date, startTime: data.startTime ?? existing.startTime });
+  }
   if (records) $set.records = await prepareRecords(records, teamOf(user));
   const update: Record<string, unknown> = { $set };
   if (endTime === null) update.$unset = { endTime: '' };
@@ -202,9 +207,10 @@ export async function markAttendance(req: Request, res: Response) {
   const entry = attendanceEntrySchema.parse(req.body);
   const user = currentUser(req);
 
-  const existing = await AttendanceSession.findById(id, { team: 1 }).lean();
+  const existing = await AttendanceSession.findById(id, { team: 1, date: 1, startTime: 1 }).lean();
   if (!existing) throw notFound('Session not found');
   await assertCanMark(user, existing, memberId);
+  assertStarted(existing);
   const [prepared] = Object.values(await prepareRecords({ [memberId]: entry }));
 
   const session = await AttendanceSession.findByIdAndUpdate(

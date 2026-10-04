@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Clock, Users, ArrowRight, ChevronLeft, Check, X, FileText, Search, UserX, ChevronDown, ChevronUp, Trash2, AlertCircle } from 'lucide-react';
+import { Calendar, Plus, Clock, Users, ArrowRight, ChevronLeft, Check, X, FileText, Search, UserX, Trash2, AlertCircle } from 'lucide-react';
 import type { Member } from './AdminDashboard';
+import { isUpcoming, opensLabel } from './sessionTime';
+import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
 
 type AttendanceSession = {
   id: string;
@@ -15,27 +17,24 @@ type AttendanceSession = {
   createdAt?: string;
 };
 
-type RecentAbsenteeSession = {
-  id: string;
-  title: string;
-  date: string;
-  startTime: string;
-  endTime?: string | null;
-  sessionSlot: string;
-  team: string;
-  notes?: string | null;
-  totalTargetCount: number;
-  absentCount: number;
-  presentCount: number;
-  absentees: Array<{
-    id: string;
-    name: string;
-    rollNo?: string | null;
-    team: string;
-    role: string;
-    department?: string | null;
-    notes?: string | null;
-  }>;
+// Verticals are always shown in this order; members inside by role, then name
+const TEAM_ORDER = ['ERM', 'TECH', 'PR', 'DESIGN', 'AMBIANCE', 'MEDIA'];
+const ROLE_ORDER = ['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'];
+const rankIn = (order: string[], v?: string) => {
+  const i = order.indexOf((v || '').toUpperCase());
+  return i === -1 ? order.length : i;
+};
+const teamRank = (t?: string) => rankIn(TEAM_ORDER, t);
+const byRoleThenName = (a: { role?: string; name?: string }, b: { role?: string; name?: string }) =>
+  rankIn(ROLE_ORDER, a.role) - rankIn(ROLE_ORDER, b.role) || (a.name || '').localeCompare(b.name || '');
+const byTeam = (a: string, b: string) => teamRank(a) - teamRank(b) || a.localeCompare(b);
+
+/** Teams a session is for: ['ALL'] or e.g. ['TECH', 'AMBIANCE'] */
+const sessionTeams = (team?: string) => (team || 'ALL').split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+/** Members a session applies to */
+const targetsOf = (session: { team: string }, members: Member[]) => {
+  const teams = sessionTeams(session.team);
+  return teams.includes('ALL') ? members : members.filter(m => teams.includes((m.team || '').toUpperCase()));
 };
 
 interface AttendanceViewProps {
@@ -49,14 +48,28 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [sessionSearchQuery, setSessionSearchQuery] = useState('');
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
-  const [recentAbsentees, setRecentAbsentees] = useState<RecentAbsenteeSession[]>([]);
-  const [absenteesLoading, setAbsenteesLoading] = useState(true);
-  const [expandedSessionIds, setExpandedSessionIds] = useState<Record<string, boolean>>({});
+  const [detailTeam, setDetailTeam] = useState<string | null>(null); // vertical shown inside a session (null = first)
+  const [sessionTeamFilter, setSessionTeamFilter] = useState('ALL_SESSIONS'); // vertical filter on the sessions list
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null); // status being bulk-saved
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   // Delete session (confirmation dialog)
   const [deletingSession, setDeletingSession] = useState<AttendanceSession | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  /** Team picker: ALL on its own, or any mix of verticals (saved as e.g. "TECH,DESIGN" in vertical order). */
+  const toggleCreateTeam = (team: string) => {
+    setCreateError(null);
+    setCreateForm(prev => {
+      if (team === 'ALL') return { ...prev, team: 'ALL' };
+      const current = sessionTeams(prev.team).filter(t => t !== 'ALL');
+      const next = current.includes(team) ? current.filter(t => t !== team) : [...current, team];
+      return { ...prev, team: next.length ? next.sort(byTeam).join(',') : 'ALL' };
+    });
+  };
 
   const [createForm, setCreateForm] = useState({
     title: '', date: new Date().toISOString().split('T')[0], startTime: '09:00', endTime: '', sessionSlot: 'FN', team: 'ALL'
@@ -86,30 +99,19 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     }
   };
 
-  const fetchRecentAbsentees = async () => {
-    setAbsenteesLoading(true);
-    try {
-      const res = await fetch('/api/sessions/recent-absentees', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setRecentAbsentees(data.sessions || []);
-      }
-    } catch (err) {
-      console.error('Failed to fetch recent absentees:', err);
-    } finally {
-      setAbsenteesLoading(false);
-    }
-  };
-
   useEffect(() => {
     fetchSessions();
-    fetchRecentAbsentees();
   }, []);
 
+  // Opening a session starts on its first vertical with an empty search
+  useEffect(() => {
+    setDetailTeam(null);
+    setMemberSearchQuery('');
+    setBulkError(null);
+  }, [activeSession?.id]);
+
   const handleMarkAttendance = async (memberId: string, status: string) => {
-    if (!activeSession) return;
+    if (!activeSession || isUpcoming(activeSession)) return; // can't mark before the meeting starts
 
     // Optimistic update
     const updatedRecords = { ...activeSession.records, [memberId]: { status, markedAt: new Date().toISOString() } };
@@ -125,10 +127,50 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
         },
         body: JSON.stringify({ status })
       });
-      fetchRecentAbsentees();
     } catch (err) {
       console.error('Failed to mark attendance:', err);
       fetchSessions(); // revert on fail
+    }
+  };
+
+  /**
+   * Mark every listed member (the selected vertical, or all) with one status.
+   * Re-reads the session first so marks made meanwhile (e.g. by team leads) are kept,
+   * then saves the merged map in one PATCH.
+   */
+  const handleBulkMark = async (status: 'PRESENT' | 'ABSENT', list: Member[], label: string) => {
+    if (!activeSession || list.length === 0 || isUpcoming(activeSession)) return;
+    if (list.length > 60 && !window.confirm(`Mark all ${list.length} members of ${label} ${status.toLowerCase()}?`)) return;
+    setBulkBusy(status);
+    setBulkError(null);
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` };
+    const known = new Set(members.map(m => m.id));
+    try {
+      const latestRes = await fetch(`/api/sessions/${activeSession.id}`, { headers });
+      const latest = latestRes.ok ? (await latestRes.json()).session : null;
+      const base: AttendanceSession['records'] = latest?.records || activeSession.records || {};
+      const now = new Date().toISOString();
+      const records: AttendanceSession['records'] = {};
+      // keep existing marks for current members only (the API rejects ids of deleted members)
+      Object.entries(base).forEach(([id, r]) => { if (known.has(id)) records[id] = r; });
+      list.forEach(m => { records[m.id] = { status, markedAt: now }; });
+
+      const res = await fetch(`/api/sessions/${activeSession.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ records }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Could not save (${res.status})`);
+      }
+      setActiveSession(prev => (prev && prev.id === activeSession.id ? { ...prev, records } : prev));
+      setSessions(prev => prev.map(s => (s.id === activeSession.id ? { ...s, records } : s)));
+    } catch (err: any) {
+      console.error('Bulk mark failed:', err);
+      setBulkError(err.message || 'Could not save attendance');
+    } finally {
+      setBulkBusy(null);
     }
   };
 
@@ -140,7 +182,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
     try {
       await fetch(`/api/sessions/${activeSession.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`
@@ -154,6 +196,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateError(null);
     try {
       const res = await fetch('/api/sessions', {
         method: 'POST',
@@ -175,11 +218,13 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           team: 'ALL',
         });
         await fetchSessions();
-        await fetchRecentAbsentees();
         if (data.session) setActiveSession(data.session);
+      } else {
+        setCreateError(data?.error || `Could not create the session (${res.status})`);
       }
     } catch (err) {
       console.error('Failed to create session:', err);
+      setCreateError('Network error, could not create the session');
     }
   };
 
@@ -207,7 +252,6 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
         setActiveSession(null);
       }
       setDeletingSession(null);
-      fetchRecentAbsentees();
     } catch (err) {
       console.error('Network error deleting session:', err);
       setDeleteError('Network error, could not delete the session');
@@ -256,10 +300,29 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   );
 
   if (activeSession) {
-    let targetMembers = activeSession.team === 'ALL'
-      ? members
-      : members.filter(m => activeSession.team.split(',').includes(m.team));
+    const allTargets = targetsOf(activeSession, members);
+    const upcoming = isUpcoming(activeSession); // not started: no marking, nothing counted
+    const statusOf = (id: string) => activeSession.records[id]?.status || 'ABSENT'; // unmarked = absent
 
+    // Header numbers are for the whole session (not the search / selected vertical)
+    const presentCount = allTargets.filter(m => statusOf(m.id) === 'PRESENT').length;
+    const absentCount = allTargets.length - presentCount;
+    const totalCount = allTargets.length;
+
+    // One card per vertical in this session (ALL sessions have all six)
+    const detailTeams = Array.from(new Set(allTargets.map(m => m.team))).sort(byTeam);
+    const showTeamCards = detailTeams.length > 1;
+    const currentTeam = !showTeamCards
+      ? 'ALL'
+      : detailTeam && (detailTeam === 'ALL' || detailTeams.includes(detailTeam)) ? detailTeam : detailTeams[0];
+    const teamCards = detailTeams.map(team => {
+      const list = allTargets.filter(m => m.team === team);
+      const present = list.filter(m => statusOf(m.id) === 'PRESENT').length;
+      const informed = list.filter(m => statusOf(m.id) === 'INFORMED').length;
+      return { team, total: list.length, present, informed };
+    });
+
+    let targetMembers = currentTeam === 'ALL' ? allTargets : allTargets.filter(m => m.team === currentTeam);
     if (memberSearchQuery) {
       const q = memberSearchQuery.toLowerCase();
       targetMembers = targetMembers.filter(m =>
@@ -270,18 +333,15 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
         m.role.toLowerCase().includes(q)
       );
     }
+    targetMembers = [...targetMembers].sort((a, b) => byTeam(a.team, b.team) || byRoleThenName(a, b));
 
-    targetMembers = [...targetMembers].sort((a, b) => a.name.localeCompare(b.name));
-
-    const presentCount = targetMembers.filter(m => activeSession.records[m.id]?.status === 'PRESENT').length;
-    const absentCount = targetMembers.filter(m => {
-      const status = activeSession.records[m.id]?.status || 'ABSENT';
-      return status === 'ABSENT' || status === 'INFORMED';
-    }).length;
-    const totalCount = targetMembers.length;
+    // In "All", rows are grouped under a bold header per vertical
+    const memberGroups = currentTeam === 'ALL' && showTeamCards
+      ? detailTeams.map(team => ({ team: team as string | null, rows: targetMembers.filter(m => m.team === team) })).filter(g => g.rows.length > 0)
+      : [{ team: null as string | null, rows: targetMembers }];
 
     return (
-      <div className="flex flex-col md:h-full md:max-h-[calc(100vh-100px)] animate-in fade-in duration-300">
+      <div className="flex flex-col pb-6 animate-in fade-in duration-300">
         {/* Active Session Header Card (Perfect Rectangular) */}
         <div className="rect-card p-5 mb-4 shrink-0">
           <div className="flex flex-col gap-4">
@@ -326,11 +386,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 </button>
                 <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 sm:px-4 py-2 text-center min-w-[70px]">
                   <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-0.5">Present</p>
-                  <p className="text-2xl font-black text-emerald-300 leading-none">{presentCount}</p>
+                  <p className="text-2xl font-black text-emerald-300 leading-none">{upcoming ? '—' : presentCount}</p>
                 </div>
                 <div className="bg-rose-500/15 border border-rose-500/30 rounded-md px-3 sm:px-4 py-2 text-center min-w-[70px]">
                   <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-0.5">Absent</p>
-                  <p className="text-2xl font-black text-rose-300 leading-none">{absentCount}</p>
+                  <p className="text-2xl font-black text-rose-300 leading-none">{upcoming ? '—' : absentCount}</p>
                 </div>
               </div>
             </div>
@@ -365,9 +425,94 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           </div>
         </div>
 
+        {upcoming && (
+          <div className="mb-4 shrink-0 px-4 py-3 rounded-md border border-indigo-500/40 bg-indigo-950/40 text-xs text-indigo-200 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-indigo-300 shrink-0" />
+            <span>
+              <span className="font-bold uppercase tracking-wider mr-1.5">Upcoming</span>
+              Attendance can be marked once the meeting starts ({opensLabel(activeSession)}). It isn't counted in any stats until then.
+            </span>
+          </div>
+        )}
+
+        {/* Vertical cards: mark one team at a time instead of scrolling the whole union */}
+        {showTeamCards && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-4 shrink-0">
+            {[{ team: 'ALL', total: totalCount, present: presentCount, informed: 0 }, ...teamCards].map(c => {
+              const active = currentTeam === c.team;
+              const pct = c.total ? Math.round((c.present / c.total) * 100) : 0;
+              return (
+                <button
+                  key={c.team}
+                  onClick={() => setDetailTeam(c.team)}
+                  className={`rect-card text-left px-3.5 py-3 cursor-pointer transition-all border ${
+                    active ? 'border-sky-400/70 bg-sky-500/10 shadow-[0_0_18px_rgba(14,165,233,0.18)]' : 'border-white/10 hover:border-sky-500/40'
+                  }`}
+                  title={c.team === 'ALL' ? 'All verticals, grouped by team' : `Mark ${c.team}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-[11px] font-bold uppercase tracking-wider truncate ${active ? 'text-sky-300' : 'text-slate-300'}`}>
+                      {c.team === 'ALL' ? 'All' : c.team}
+                    </span>
+                    <span className="text-sm font-bold font-mono leading-none text-white">
+                      {c.present}<span className="text-slate-500">/{c.total}</span>
+                    </span>
+                  </div>
+                  <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden mt-2">
+                    <div
+                      className={`h-full rounded-full ${pct >= 75 ? 'bg-emerald-400' : pct >= 50 ? 'bg-amber-400' : 'bg-rose-400'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-mono mt-1.5 truncate">
+                    {upcoming ? 'Upcoming' : `${pct}% present${c.informed ? ` · ${c.informed} informed` : ''}`}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Bulk marking for the selected vertical (or the whole session in "All") */}
+        {(() => {
+          const scope = currentTeam === 'ALL' ? allTargets : allTargets.filter(m => m.team === currentTeam);
+          const label = currentTeam === 'ALL' ? (showTeamCards ? 'all verticals' : 'this session') : currentTeam;
+          const scopePresent = scope.filter(m => statusOf(m.id) === 'PRESENT').length;
+          return (
+            <div className="rect-card px-4 py-3 mb-3 shrink-0 flex flex-wrap items-center gap-2 sm:gap-3">
+              <p className="text-xs text-slate-300 mr-auto">
+                <span className="font-bold text-white uppercase tracking-wider">{label}</span>
+                <span className="text-slate-500 font-mono ml-2">{scopePresent} / {scope.length} present</span>
+              </p>
+              <button
+                onClick={() => handleBulkMark('PRESENT', scope, label)}
+                disabled={!!bulkBusy || scope.length === 0 || upcoming}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                {bulkBusy === 'PRESENT' ? 'Saving…' : <>All Present<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
+              </button>
+              <button
+                onClick={() => handleBulkMark('ABSENT', scope, label)}
+                disabled={!!bulkBusy || scope.length === 0 || upcoming}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                {bulkBusy === 'ABSENT' ? 'Saving…' : <>All Absent<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
+              </button>
+              {bulkError && (
+                <p className="w-full text-xs text-rose-300 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {bulkError}
+                </p>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Member Marking Table (Crisp Rectangular Container) */}
-        <div className="rect-card overflow-hidden flex-1 flex flex-col min-h-0">
-          <div className="overflow-auto flex-1">
+        <div className="rect-card overflow-hidden flex flex-col">
+          {/* Own scroll box, nearly a full screen tall, so the header row stays visible while marking */}
+          <div className="overflow-auto max-h-[calc(100dvh-120px)] min-h-[320px]">
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-[#100D1B]/95 sticky top-0 z-10 border-b border-white/[0.08] backdrop-blur-md">
                 <tr>
@@ -378,9 +523,28 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
-                {targetMembers.map(member => {
+                {targetMembers.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-10 text-center text-slate-400">No members match this filter.</td>
+                  </tr>
+                )}
+                {memberGroups.map(group => (
+                  <React.Fragment key={group.team || 'rows'}>
+                    {group.team && (
+                      <tr className="bg-[#0C1E38]">
+                        <td colSpan={4} className="px-4 sm:px-6 py-3 border-l-4 border-l-sky-400">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm sm:text-base font-black text-white uppercase tracking-widest">{group.team}</span>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              {group.rows.filter(m => statusOf(m.id) === 'PRESENT').length} / {group.rows.length} present
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                {group.rows.map(member => {
                   const record = activeSession.records[member.id];
-                  const status = record?.status || 'ABSENT'; // Default is ABSENT
+                  const status = upcoming ? 'UPCOMING' : (record?.status || 'ABSENT'); // Default is ABSENT
                   const isPresent = status === 'PRESENT';
                   const isAbsent = status === 'ABSENT';
                   const isInformed = status === 'INFORMED';
@@ -404,7 +568,9 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                         <div className="inline-flex items-center gap-1.5 p-1 bg-[#0B172B] border border-white/10 rounded-md">
                           <button
                             onClick={() => handleMarkAttendance(member.id, isPresent ? 'ABSENT' : 'PRESENT')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
+                            disabled={upcoming}
+                            title={upcoming ? 'Opens when the meeting starts' : undefined}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                               isPresent
                                 ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
                                 : 'text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10'
@@ -415,7 +581,9 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                           </button>
                           <button
                             onClick={() => handleMarkAttendance(member.id, 'ABSENT')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
+                            disabled={upcoming}
+                            title={upcoming ? 'Opens when the meeting starts' : undefined}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                               isAbsent
                                 ? 'bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]'
                                 : 'text-slate-400 hover:text-rose-300 hover:bg-rose-500/10'
@@ -426,7 +594,9 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                           </button>
                           <button
                             onClick={() => handleMarkAttendance(member.id, 'INFORMED')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
+                            disabled={upcoming}
+                            title={upcoming ? 'Opens when the meeting starts' : undefined}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                               isInformed
                                 ? 'bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]'
                                 : 'text-slate-400 hover:text-sky-300 hover:bg-sky-500/10'
@@ -440,6 +610,8 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     </tr>
                   );
                 })}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
           </div>
@@ -451,7 +623,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6 md:h-full md:max-h-[calc(100vh-100px)]">
+    <div className="flex flex-col gap-6 pb-6">
       {/* ── LAST 3 SESSIONS ABSENTEES SECTION (Perfect Rectangular Cards) ── */}
       <section className="rect-card p-5">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/[0.08]">
@@ -463,122 +635,25 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white tracking-tight">Last 3 Sessions Absentees</h3>
                 <span className="badge-reactbits-new">
-                  {recentAbsentees.length} {recentAbsentees.length === 1 ? 'session' : 'sessions'}
+                  {repeatAbsenteeCards(sessions, members).length} verticals
                 </span>
               </div>
               <p className="text-xs text-[#9490A6] mt-0.5">
-                Overview of absent members across the three most recent attendance sessions
+                Each vertical's last 3 meetings (admin- and team-created) and who missed all three
               </p>
             </div>
           </div>
         </div>
 
-        {absenteesLoading ? (
-          <div className="py-8 flex items-center justify-center">
-            <div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : recentAbsentees.length === 0 ? (
+        {/* One card per vertical (with members): its own last 3 meetings, admin- or team-created */}
+        {repeatAbsenteeCards(sessions, members).length === 0 ? (
           <div className="py-8 text-center bg-white/[0.02] rounded-md border border-dashed border-white/10">
             <UserX className="w-8 h-8 mx-auto mb-2 text-slate-500 opacity-60" />
-            <p className="text-sm font-semibold text-slate-300">No previous sessions available.</p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Absentees will automatically be displayed here once sessions are recorded.
-            </p>
+            <p className="text-sm font-semibold text-slate-300">No members or meetings yet.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Each vertical's last 3 meetings will show here once meetings are recorded.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {recentAbsentees.map((s) => {
-              const isExpanded = expandedSessionIds[s.id] ?? true;
-              return (
-                <div
-                  key={s.id}
-                  className="rect-card p-4 flex flex-col justify-between hover:border-sky-500/40 transition-all group"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                          <span className="badge-reactbits-new">
-                            {s.team.split(',').join(', ')}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
-                            s.sessionSlot === 'FN' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' :
-                            s.sessionSlot === 'AN' ? 'bg-orange-500/15 text-orange-300 border border-orange-500/30' :
-                            'bg-sky-500/15 text-sky-300 border border-sky-500/30'
-                          }`}>
-                            {s.sessionSlot}
-                          </span>
-                        </div>
-                        <h4 className="font-bold text-white text-sm leading-snug line-clamp-1" title={s.title}>
-                          {s.title}
-                        </h4>
-                      </div>
-                      <span className="px-2.5 py-1 bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold rounded text-xs whitespace-nowrap shrink-0">
-                        {s.absentCount} Absent
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3 text-xs text-[#9490A6] mb-3">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-sky-400" />
-                        {s.date}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-sky-400" />
-                        {s.startTime} {s.endTime ? `- ${s.endTime}` : ''}
-                      </span>
-                    </div>
-
-                    <div className="mb-3">
-                      <div className="flex items-center justify-between text-[11px] font-medium text-[#9490A6] mb-1.5">
-                        <span>Absentee List ({s.absentees.length})</span>
-                        <button
-                          onClick={() => setExpandedSessionIds(prev => ({ ...prev, [s.id]: !isExpanded }))}
-                          className="text-sky-400 hover:text-sky-300 font-semibold cursor-pointer flex items-center gap-0.5"
-                        >
-                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                          {isExpanded ? 'Hide' : 'Show'}
-                        </button>
-                      </div>
-
-                      {isExpanded && (
-                        s.absentees.length === 0 ? (
-                          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-md p-2.5 text-center text-xs text-emerald-400 font-medium">
-                            🎉 100% Attendance — Zero Absentees!
-                          </div>
-                        ) : (
-                          <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 rounded-md border border-white/10 bg-[#050B14]/80 p-2">
-                            {s.absentees.map(ab => (
-                              <div key={ab.id} className="flex items-center justify-between text-xs py-1 px-1.5 rounded hover:bg-white/[0.04]">
-                                <div className="min-w-0 flex-1 pr-2">
-                                  <p className="font-semibold text-slate-200 truncate">{ab.name}</p>
-                                  <p className="text-[10px] text-[#9490A6] truncate">{ab.rollNo || ab.department || 'No Roll No'}</p>
-                                </div>
-                                <span className="text-[10px] px-1.5 py-0.5 bg-white/5 border border-white/10 text-slate-300 rounded font-medium shrink-0">
-                                  {ab.team}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      const match = sessions.find(sess => sess.id === s.id);
-                      if (match) setActiveSession(match);
-                    }}
-                    className="w-full mt-2 py-2 px-3 btn-rect-secondary text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    View & Manage Session
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+          <RepeatAbsentees sessions={sessions} members={members} showTitle={false} />
         )}
       </section>
 
@@ -602,7 +677,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
             )}
           </div>
           <button
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={() => { setCreateError(null); setIsCreateModalOpen(true); }}
             className="btn-sky-glow shrink-0 px-3.5 py-2 text-xs font-semibold flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -610,6 +685,36 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           </button>
         </div>
       </div>
+
+      {/* Filter sessions by vertical */}
+      {sessions.length > 0 && (() => {
+        // A vertical's chip = every meeting that vertical attends (its own, multi-team ones, and union-wide)
+        const attends = (s: AttendanceSession, t: string) => { const ts = sessionTeams(s.team); return ts.includes(t) || ts.includes('ALL'); };
+        const chipTeams = Array.from(new Set([...members.map(m => (m.team || '').toUpperCase()), ...sessions.flatMap(s => sessionTeams(s.team))].filter(t => t && t !== 'ALL'))).sort(byTeam);
+        const chips = [
+          { key: 'ALL_SESSIONS', label: 'All', count: sessions.length },
+          { key: 'ALL', label: 'Union-wide', count: sessions.filter(s => sessionTeams(s.team).includes('ALL')).length },
+          ...chipTeams.map(t => ({ key: t, label: t, count: sessions.filter(s => attends(s, t)).length })),
+        ].filter(c => c.count > 0 || c.key === 'ALL_SESSIONS');
+        return (
+          <div className="flex flex-wrap gap-2 -mt-2">
+            {chips.map(c => {
+              const active = sessionTeamFilter === c.key;
+              return (
+                <button
+                  key={c.key}
+                  onClick={() => setSessionTeamFilter(c.key)}
+                  className={`px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider border transition-all cursor-pointer ${
+                    active ? 'bg-sky-500/15 border-sky-400/70 text-sky-300' : 'border-white/10 text-slate-400 hover:text-slate-200 hover:border-white/20'
+                  }`}
+                >
+                  {c.label} <span className="font-mono text-slate-500 ml-1">{c.count}</span>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center py-12">
@@ -628,6 +733,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {sortSessionsDesc(sessions).filter(s => {
+            if (sessionTeamFilter === 'ALL' && !sessionTeams(s.team).includes('ALL')) return false;
+            if (sessionTeamFilter !== 'ALL_SESSIONS' && sessionTeamFilter !== 'ALL') {
+              const ts = sessionTeams(s.team);
+              if (!ts.includes(sessionTeamFilter) && !ts.includes('ALL')) return false;
+            }
             if (!sessionSearchQuery) return true;
             const q = sessionSearchQuery.toLowerCase();
             return s.title.toLowerCase().includes(q) ||
@@ -635,8 +745,9 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               s.date.includes(q) ||
               s.sessionSlot.toLowerCase().includes(q);
           }).map(session => {
-            const targetCount = session.team === 'ALL' ? members.length : members.filter(m => session.team.split(',').includes(m.team)).length;
-            const markedCount = Object.keys(session.records).length;
+            const sessionTargets = targetsOf(session, members);
+            const targetCount = sessionTargets.length;
+            const markedCount = sessionTargets.filter(m => session.records?.[m.id]).length;
             const progress = targetCount === 0 ? 0 : Math.round((markedCount / targetCount) * 100);
 
             return (
@@ -694,6 +805,14 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                   </p>
                 )}
 
+                {isUpcoming(session) ? (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider bg-indigo-950/60 text-indigo-300 border border-indigo-500/30">
+                      Upcoming
+                    </span>
+                    <span className="text-[#9490A6]">{opensLabel(session)}</span>
+                  </div>
+                ) : (
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="font-semibold text-slate-300">Marking Progress</span>
@@ -706,6 +825,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     />
                   </div>
                 </div>
+                )}
               </div>
             );
           })}
@@ -787,18 +907,53 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Target Team / Domain</label>
-                <select
-                  value={createForm.team}
-                  onChange={(e) => setCreateForm({ ...createForm, team: e.target.value })}
-                  className="rect-input w-full px-3 py-2 text-xs bg-[#0B172B] text-slate-200 cursor-pointer"
-                >
-                  <option value="ALL">ALL (Entire Students Union)</option>
-                  {Array.from(new Set(members.map(m => m.team))).sort().map(team => (
-                    <option key={team} value={team}>{team}</option>
-                  ))}
-                </select>
+                <label className="block font-semibold text-slate-300 mb-1">Target Teams</label>
+                <p className="text-[10px] text-slate-500 mb-2">Pick ALL, or one or more verticals (e.g. TECH + DESIGN)</p>
+                {(() => {
+                  const selected = sessionTeams(createForm.team);
+                  const verticals = Array.from(new Set([...TEAM_ORDER, ...members.map(m => (m.team || '').toUpperCase())].filter(Boolean)))
+                    .filter(t => TEAM_ORDER.includes(t) || members.some(m => (m.team || '').toUpperCase() === t))
+                    .sort(byTeam);
+                  const chip = (team: string, label: string) => {
+                    const on = selected.includes(team);
+                    return (
+                      <button
+                        type="button"
+                        key={team}
+                        onClick={() => toggleCreateTeam(team)}
+                        aria-pressed={on}
+                        className={`px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider border transition-all cursor-pointer flex items-center gap-1.5 ${
+                          on ? 'bg-sky-500/15 border-sky-400/70 text-sky-300' : 'border-white/10 text-slate-400 hover:text-slate-200 hover:border-white/20'
+                        }`}
+                      >
+                        {on && <Check className="w-3 h-3" />}
+                        {label}
+                      </button>
+                    );
+                  };
+                  const count = selected.includes('ALL')
+                    ? members.length
+                    : members.filter(m => selected.includes((m.team || '').toUpperCase())).length;
+                  return (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        {chip('ALL', 'All (entire union)')}
+                        {verticals.map(t => chip(t, t))}
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-mono mt-2">
+                        {selected.includes('ALL') ? 'Everyone' : selected.join(' + ')} · {count} members
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
+
+              {createError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-md text-xs text-rose-300 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{createError}</span>
+                </div>
+              )}
 
               <div className="pt-2 flex gap-3">
                 <button
