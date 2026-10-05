@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import type { User } from '../types';
+import { type User, DEPARTMENTS } from '../types';
 import {
   Users,
   Calendar,
@@ -30,7 +30,9 @@ import {
   ArrowUpDown,
   Minus,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Upload,
+  Download
 } from 'lucide-react';
 import ReportsView from './ReportsView';
 import { isUpcoming, opensLabel } from './sessionTime';
@@ -270,12 +272,12 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   // Edit Member Modal
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [editForm, setEditForm] = useState<{
-    rollNo: string;
-    department: string;
-    year: string;
-    phone: string;
-  }>({ rollNo: '', department: '', year: '', phone: '' });
+  const [editForm, setEditForm] = useState<Partial<Member>>({ rollNo: '', department: '', year: '', phone: '' });
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importCsvText, setImportCsvText] = useState('');
+  const [importSaving, setImportSaving] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
@@ -543,21 +545,26 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   // Edit Member Save Handler
   const handleSaveMemberEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingMember) return;
 
     setEditSaving(true);
     setEditError(null);
     setEditSuccess(null);
 
     const payload: Record<string, string | undefined> = {};
-    if (editForm.rollNo.trim()) payload.rollNo = editForm.rollNo.trim();
-    if (editForm.department.trim()) payload.department = editForm.department.trim();
-    if (editForm.year.trim()) payload.year = editForm.year.trim();
-    if (editForm.phone.trim()) payload.phone = editForm.phone.trim();
+    if (editForm.rollNo?.trim()) payload.rollNo = editForm.rollNo.trim();
+    if (editForm.department?.trim()) payload.department = editForm.department.trim();
+    if (editForm.year?.trim()) payload.year = editForm.year.trim();
+    if (editForm.phone?.trim()) payload.phone = editForm.phone.trim();
+    if (editForm.name?.trim()) payload.name = editForm.name.trim();
+    if (editForm.role?.trim()) payload.role = editForm.role.trim();
+    if (!editingMember) payload.team = teamName;
 
     try {
-      const res = await fetch(`/api/members/${editingMember.id}`, {
-        method: 'PATCH',
+      const method = editingMember ? 'PATCH' : 'POST';
+      const url = editingMember ? `/api/members/${editingMember.id}` : '/api/members';
+
+      const res = await fetch(url, {
+        method,
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
@@ -569,10 +576,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       } catch { }
 
       if (res.ok) {
-        setEditSuccess('Member details updated successfully');
-        setMembers((prev) =>
-          prev.map((m) => (m.id === editingMember.id ? { ...m, ...payload } : m))
-        );
+        setEditSuccess(editingMember ? 'Member details updated successfully' : 'Member added successfully');
+        if (editingMember) {
+          setMembers((prev) =>
+            prev.map((m) => (m.id === editingMember.id ? { ...m, ...payload } : m))
+          );
+        } else {
+          setMembers((prev) => [...prev, resData.member]);
+        }
         setTimeout(() => {
           setEditModalOpen(false);
         }, 1200);
@@ -889,27 +900,30 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#050B14]/85 backdrop-blur-xl border-r border-white/10 py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${sidebarOpen
-            ? 'w-60 translate-x-0 opacity-100 shadow-[0_0_50px_rgba(0,0,0,0.8)] md:shadow-none'
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col bg-[#081220]/95 backdrop-blur-2xl border-r border-white/[0.08] py-6 px-3 shrink-0 transition-all duration-300 ease-in-out ${
+          sidebarOpen
+            ? 'w-64 translate-x-0 opacity-100 shadow-2xl'
             : 'w-0 -translate-x-full md:translate-x-0 md:w-0 overflow-hidden opacity-0 p-0 border-0 pointer-events-none'
-          }`}
+        }`}
       >
         {/* Brand */}
-        <div className="flex items-center gap-2.5 px-3 mb-8">
-          <img
-            src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
-            alt="Logo"
-            className="w-9 h-9 rounded-md object-cover shadow-xs shrink-0 border border-sky-500/30"
-          />
+        <div className="flex items-center gap-3 px-3 mb-8">
+          <div className="w-10 h-10 rounded-lg p-0.5 bg-gradient-to-tr from-sky-600 via-cyan-400 to-blue-500 shrink-0 shadow-[0_0_20px_rgba(14,165,233,0.5)]">
+            <img
+              src="https://ugc.production.linktr.ee/16e3a388-5f1c-4ebc-a943-a064b81991c3_243269363-3078323169067077-7607043015283444723-n.jpeg?io=true&size=avatar-v3_0"
+              alt="Logo"
+              className="w-full h-full rounded-[6px] object-cover"
+            />
+          </div>
           <div className="min-w-0 flex-1">
-            <p className="text-white font-bold text-sm leading-tight truncate">Students Union</p>
-            <p className="text-sky-400 font-mono text-[10px] tracking-wide uppercase">
-              {teamName} Team Portal
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-white font-bold text-sm leading-tight truncate">Students Union</p>
+            </div>
+            <p className="text-[#94A3B8] text-[11px] mt-0.5">{teamName} Team</p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="ml-auto p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-md transition-colors cursor-pointer shrink-0"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-white/5 rounded-md transition-colors cursor-pointer shrink-0"
             title="Close sidebar"
             aria-label="Close sidebar"
           >
@@ -918,7 +932,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-1.5">
           {NAV.map(({ icon: Icon, label }) => {
             const isActive = activeNav === label;
             return (
@@ -926,44 +940,48 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 key={label}
                 onClick={() => {
                   navigateTo(label);
-                  if (window.innerWidth < 768) setSidebarOpen(false);
+                  setSidebarOpen(false);
                 }}
-                className={`nav-item-rect ${isActive ? 'nav-active-rect' : ''}`}
+                className={`w-full nav-item-rect ${isActive ? 'nav-item-rect-active' : ''}`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="truncate">{label}</span>
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
+                <span className="flex-1 text-left truncate">{label}</span>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38BDF8]" />
+                )}
               </button>
             );
           })}
         </nav>
 
         {/* User Card */}
-        <div className="border-t border-white/10 pt-4">
-          <div className="flex items-center gap-2.5 px-2 py-2 rounded-md bg-white/[0.03] border border-white/5">
+        <div className="border-t border-white/[0.08] pt-4 mt-auto">
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-md bg-[#0C1A30] border border-white/[0.06]">
             <div
-              className="w-8 h-8 rounded-md flex items-center justify-center text-white text-xs font-semibold shrink-0"
+              className="w-8 h-8 rounded-md flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-md"
               style={{ background: avatarColor(loginName) }}
             >
               {loginName[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-white truncate">{loginName}</p>
-              <p className="text-[10px] text-sky-400 font-mono truncate">{teamName} Team</p>
+              <p className="text-xs font-bold text-white truncate">{loginName}</p>
+              <p className="text-[10px] text-sky-300 font-medium truncate">{teamName} Lead</p>
             </div>
             <div className="flex items-center gap-1">
               <button
                 onClick={fetchData}
                 disabled={loading}
                 title="Refresh Data"
-                className={`p-1.5 rounded-md hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer ${loading ? 'animate-spin opacity-50 cursor-not-allowed' : ''
-                  }`}
+                className={`p-1.5 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer ${
+                  loading ? 'animate-spin opacity-50 cursor-not-allowed' : ''
+                }`}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={handleLogout}
                 title="Sign out"
-                className="p-1.5 rounded-md hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
@@ -1464,19 +1482,40 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
                 {/* Role Controls */}
                 {activeNav === 'Members' ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-sky-300 flex items-center gap-1 uppercase tracking-wider">
-                      <Filter className="w-3 h-3 text-sky-400" /> Role:
-                    </span>
-                    <select
-                      value={filterRole}
-                      onChange={(e) => setFilterRole(e.target.value)}
-                      className="rect-input py-2 px-3 text-xs text-slate-200 cursor-pointer bg-[#050B14]"
-                    >
-                      {['ALL', 'LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(role => (
-                        <option key={role} value={role} className="bg-[#0B172B] text-slate-200">{role}</option>
-                      ))}
-                    </select>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-sky-300 flex items-center gap-1 uppercase tracking-wider">
+                        <Filter className="w-3 h-3 text-sky-400" /> Role:
+                      </span>
+                      <select
+                        value={filterRole}
+                        onChange={(e) => setFilterRole(e.target.value)}
+                        className="rect-input py-2 px-3 text-xs text-slate-200 cursor-pointer bg-[#050B14]"
+                      >
+                        {['ALL', 'LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(role => (
+                          <option key={role} value={role} className="bg-[#0B172B] text-slate-200">{role}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+                      <button
+                        onClick={() => {
+                          setEditingMember(null);
+                          setEditForm({ team: teamName });
+                          setEditModalOpen(true);
+                        }}
+                        className="btn-sky flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add Member
+                      </button>
+                      <button
+                        onClick={() => setImportModalOpen(true)}
+                        className="btn-rect-secondary flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> Bulk Import
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
@@ -2255,15 +2294,17 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       {/* ══════════════════════════════════════════════
           EDIT MEMBER DETAILS MODAL
          ══════════════════════════════════════════════ */}
-      {editModalOpen && editingMember && (
+      {editModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
           <div className="rect-card-elevated max-w-md w-full max-h-[90dvh] overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wide">Edit Member Details</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wide">
+                  {editingMember ? 'Edit Member Details' : 'Add New Member'}
+                </h3>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">
-                  Update contact or academic info for {editingMember.name}
+                  {editingMember ? `Update contact or academic info for ${editingMember.name}` : `Add a new member to ${teamName} team`}
                 </p>
               </div>
               <button
@@ -2277,17 +2318,62 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             {/* Modal Form */}
             <form onSubmit={handleSaveMemberEdit} className="p-6 space-y-4">
               {/* Member & Locked Team Info */}
-              <div className="p-3 bg-[#050B14] rounded-md border border-white/10 flex items-center justify-between text-xs">
-                <div>
-                  <span className="font-semibold text-white">{editingMember.name}</span>
-                  <span className={`ml-2 px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase ${ROLE_STYLE[editingMember.role] || ''}`}>
-                    {editingMember.role}
+              {editingMember ? (
+                <div className="p-3 bg-[#050B14] rounded-md border border-white/10 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-semibold text-white">{editingMember.name}</span>
+                    <span className={`ml-2 px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase ${ROLE_STYLE[editingMember.role] || ''}`}>
+                      {editingMember.role}
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-sm text-[10px] font-mono font-bold bg-sky-950/60 text-sky-300 border border-sky-500/30 uppercase">
+                    Team: {teamName}
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded-sm text-[10px] font-mono font-bold bg-sky-950/60 text-sky-300 border border-sky-500/30 uppercase">
-                  Team: {teamName}
-                </span>
-              </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.name || ''}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="e.g. John Doe"
+                      className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                        Role
+                      </label>
+                      <select
+                        value={editForm.role || ''}
+                        onChange={(e) => setEditForm((prev) => ({ ...prev, role: e.target.value }))}
+                        className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500 bg-[#0C1A30]"
+                        required
+                      >
+                        <option value="">Select Role</option>
+                        <option value="CORE">CORE</option>
+                        <option value="COORDINATOR">COORDINATOR</option>
+                        <option value="CO-LEAD">CO-LEAD</option>
+                        <option value="LEAD">LEAD</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
+                        Team
+                      </label>
+                      <div className="rect-input w-full px-3 py-2 text-xs text-sky-300 bg-sky-950/30 border-sky-900/50 flex items-center h-full">
+                        {teamName}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Status / Notice Messages */}
               {editError && (
@@ -2309,7 +2395,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </label>
                 <input
                   type="text"
-                  value={editForm.rollNo}
+                  value={editForm.rollNo || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, rollNo: e.target.value }))}
                   placeholder="e.g. 21B001"
                   className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
@@ -2321,13 +2407,18 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
                   Department
                 </label>
-                <input
-                  type="text"
-                  value={editForm.department}
+                <select
+                  value={editForm.department || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
-                  placeholder="e.g. Computer Science"
-                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
-                />
+                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500 bg-[#0C1A30]"
+                >
+                  <option value="">Select Department</option>
+                  {DEPARTMENTS.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Year */}
@@ -2335,13 +2426,18 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
                   Year of Study
                 </label>
-                <input
-                  type="text"
-                  value={editForm.year}
+                <select
+                  value={editForm.year || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
-                  placeholder="e.g. 2 or 3"
-                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
-                />
+                  className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500 bg-[#0C1A30]"
+                >
+                  <option value="">Select Year</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
               </div>
 
               {/* Phone */}
@@ -2351,7 +2447,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 </label>
                 <input
                   type="text"
-                  value={editForm.phone}
+                  value={editForm.phone || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
                   placeholder="e.g. 9876543210"
                   className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500"
@@ -2555,6 +2651,155 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                 {deleteBusy ? 'Deleting...' : 'Delete'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ══════════════════════════════════════════════
+          BULK IMPORT MODAL
+         ══════════════════════════════════════════════ */}
+      {importModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-[#050B14]/80 backdrop-blur-sm"
+            onClick={() => !importSaving && setImportModalOpen(false)}
+          />
+          <div className="rect-card bg-[#0B172B] w-full max-w-2xl relative z-10 flex flex-col max-h-[90vh] shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
+              <div>
+                <h3 className="text-base font-bold text-white uppercase tracking-wide">Bulk Import Members</h3>
+                <p className="text-xs text-slate-400 font-mono mt-0.5">
+                  Paste CSV data (Name, Role, Roll No, Department, Year, Phone)
+                </p>
+              </div>
+              <button
+                onClick={() => !importSaving && setImportModalOpen(false)}
+                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!importCsvText.trim()) return;
+                setImportSaving(true);
+                setImportError(null);
+                setImportSuccess(null);
+                try {
+                  const lines = importCsvText.split('\n').filter(l => l.trim() !== '');
+                  if (lines.length > 0) {
+                    const header = lines[0].toLowerCase();
+                    if (!header.includes('team')) {
+                      lines[0] = lines[0].trim() + ',"Team"';
+                      for (let i = 1; i < lines.length; i++) {
+                        lines[i] = lines[i].trim() + `,"${teamName}"`;
+                      }
+                    }
+                  }
+                  const finalCsvText = lines.join('\n');
+
+                  const res = await fetch('/api/members/import', {
+                    method: 'POST',
+                    headers: { ...getAuthHeaders(), 'Content-Type': 'text/csv' },
+                    body: finalCsvText,
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || 'Import failed');
+                  if (data.invalid > 0) {
+                    setImportError(`Imported ${data.valid}, but failed ${data.invalid}. Check your data.`);
+                  } else {
+                    setImportSuccess(`Successfully imported ${data.valid} members! Reloading...`);
+                    setTimeout(() => window.location.reload(), 1500);
+                  }
+                } catch (err: any) {
+                  setImportError(err.message || 'Error importing members');
+                } finally {
+                  setImportSaving(false);
+                }
+              }}
+              className="p-6 flex flex-col gap-4 flex-1 min-h-0"
+            >
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <label className="btn-rect-secondary flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer border-dashed border-sky-500/30 hover:border-sky-400">
+                  <Upload className="w-3.5 h-3.5" /> Select CSV File
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        if (ev.target?.result) setImportCsvText(ev.target.result as string);
+                      };
+                      reader.readAsText(file);
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const content = `"Name","Role","Roll No","Department","Year","Phone"\n`;
+                    const blob = new Blob([content], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'erm_team_template.csv';
+                    a.click();
+                  }}
+                  className="btn-rect-secondary flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download Template
+                </button>
+              </div>
+              <div className="flex-1 bg-[#0C1A30] border border-white/10 p-4 font-mono text-xs text-slate-300 flex flex-col justify-center items-center rounded-md min-h-[150px]">
+                {importCsvText ? (
+                  <div className="flex flex-col items-center gap-2 text-sky-400">
+                    <FileText className="w-8 h-8" />
+                    <span>File loaded. {importCsvText.split('\n').length} rows detected.</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-slate-500">
+                    <span>No file selected</span>
+                    <span className="text-[10px] uppercase tracking-wide mt-2">Required Headers:</span>
+                    <span className="text-[10px] uppercase tracking-wide text-sky-500/70">"Name", "Role", "Roll No", "Department", "Year", "Phone"</span>
+                  </div>
+                )}
+              </div>
+
+              {importError && (
+                <div className="p-3 bg-rose-950/70 border border-rose-500/40 rounded-md text-xs text-rose-300 font-mono flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{importError}</span>
+                </div>
+              )}
+              {importSuccess && (
+                <div className="p-3 bg-emerald-950/70 border border-emerald-500/40 rounded-md text-xs text-emerald-300 font-mono flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{importSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setImportModalOpen(false)}
+                  disabled={importSaving}
+                  className="px-4 py-2 text-xs font-bold font-mono text-slate-300 hover:text-white transition-colors cursor-pointer uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={importSaving || !importCsvText.trim()}
+                  className="btn-sky-glow px-6 py-2 text-xs font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {importSaving ? 'Importing...' : 'Start Import'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

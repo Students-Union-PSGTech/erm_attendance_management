@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import type { User } from '../types';
+import { type User, DEPARTMENTS } from '../types';
 import {
   Users, Calendar, BarChart2,
   LogOut, Grid3X3, ArrowUpDown, ArrowDown, ArrowUp, RefreshCw,
   Search, Filter, X, Minus, Plus, Edit3, Eye, Menu, ShieldCheck,
-  Activity, ArrowRight, Sparkles, UserX, ChevronRight, ChevronLeft
+  Activity, ArrowRight, Sparkles, UserX, ChevronRight, ChevronLeft,
+  FileText, AlertCircle, Check, Upload, Download
 } from 'lucide-react';
 import AttendanceView from './AttendanceView';
 import ReportsView from './ReportsView';
@@ -128,6 +129,11 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [editForm, setEditForm] = useState<Partial<Member>>({});
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importCsvText, setImportCsvText] = useState('');
+  const [importSaving, setImportSaving] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
@@ -213,14 +219,16 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
   const handleSaveMemberEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingMember) return;
     setEditSaving(true);
     setEditError(null);
     setEditSuccess(null);
 
     try {
-      const res = await fetch(`/api/members/${editingMember.id}`, {
-        method: 'PUT',
+      const method = editingMember ? 'PUT' : 'POST';
+      const url = editingMember ? `/api/members/${editingMember.id}` : '/api/members';
+      
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -230,18 +238,23 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to update member');
+        throw new Error(data.error || 'Failed to save member');
       }
 
-      setMembers(prev =>
-        prev.map(m => (m.id === editingMember.id ? { ...m, ...data.member } : m))
-      );
-      setEditSuccess('Member details successfully updated!');
+      if (editingMember) {
+        setMembers(prev =>
+          prev.map(m => (m.id === editingMember.id ? { ...m, ...data.member } : m))
+        );
+      } else {
+        setMembers(prev => [...prev, data.member]);
+      }
+      
+      setEditSuccess(editingMember ? 'Member details successfully updated!' : 'Member successfully added!');
       setTimeout(() => {
         setEditModalOpen(false);
       }, 1000);
     } catch (err: any) {
-      setEditError(err.message || 'Error updating member');
+      setEditError(err.message || 'Error saving member');
     } finally {
       setEditSaving(false);
     }
@@ -334,6 +347,11 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
         if (diff !== 0) return diff * dir;
         continue;
       }
+      if (config.key === 'team') {
+        const diff = teamRank(a.team) - teamRank(b.team);
+        if (diff !== 0) return diff * dir;
+        continue;
+      }
       const aVal = (a[config.key] || '').toString().toLowerCase();
       const bVal = (b[config.key] || '').toString().toLowerCase();
       if (aVal < bVal) return -dir;
@@ -411,7 +429,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 key={label}
                 onClick={() => {
                   navigateTo(label);
-                  if (window.innerWidth < 768) setSidebarOpen(false);
+                  setSidebarOpen(false);
                 }}
                 className={`w-full nav-item-rect ${isActive ? 'nav-item-rect-active' : ''}`}
               >
@@ -865,18 +883,38 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   {/* Filters */}
                   <div className="flex flex-wrap items-center gap-2.5">
                     {activeNav === 'Members' && (
-                      <div className="flex items-center gap-1.5 bg-[#0B172B] border border-white/10 rounded-md px-3 py-1.5">
-                        <Filter className="w-3 h-3 text-sky-400" />
-                        <select
-                          value={filterRole}
-                          onChange={(e) => setFilterRole(e.target.value)}
-                          className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1"
-                        >
-                          <option value="ALL" className="bg-[#0B172B] text-slate-200">All Roles</option>
-                          {Array.from(new Set(members.map(m => m.role))).sort((a, b) => roleRank(a) - roleRank(b)).map(r => (
-                            <option key={r} value={r} className="bg-[#0B172B] text-slate-200">{r}</option>
-                          ))}
-                        </select>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5 bg-[#0B172B] border border-white/10 rounded-md px-3 py-1.5">
+                          <Filter className="w-3 h-3 text-sky-400" />
+                          <select
+                            value={filterRole}
+                            onChange={(e) => setFilterRole(e.target.value)}
+                            className="bg-transparent text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1"
+                          >
+                            <option value="ALL" className="bg-[#0B172B] text-slate-200">All Roles</option>
+                            {Array.from(new Set(members.map(m => m.role))).sort((a, b) => roleRank(a) - roleRank(b)).map(r => (
+                              <option key={r} value={r} className="bg-[#0B172B] text-slate-200">{r}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+                          <button
+                            onClick={() => {
+                              setEditingMember(null);
+                              setEditForm({ team: filterTeam !== 'ALL' ? filterTeam : '' });
+                              setEditModalOpen(true);
+                            }}
+                            className="btn-sky flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Add Member
+                          </button>
+                          <button
+                            onClick={() => setImportModalOpen(true)}
+                            className="btn-rect-secondary flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5" /> Bulk Import
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1299,15 +1337,15 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       {/* ══════════════════════════════════════════════
           EDIT MEMBER DETAILS MODAL
          ══════════════════════════════════════════════ */}
-      {editModalOpen && editingMember && (
+      {editModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
           <div className="rect-card-elevated max-w-md w-full max-h-[90dvh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-6 py-5 border-b border-white/[0.08] flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-white">Edit Member Details</h3>
+                <h3 className="text-base font-bold text-white">{editingMember ? 'Edit Member Details' : 'Add New Member'}</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Update info for {editingMember.name}
+                  {editingMember ? `Update info for ${editingMember.name}` : 'Enter details for the new member'}
                 </p>
               </div>
               <button
@@ -1326,7 +1364,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   <span className="font-semibold text-slate-300">Full Name:</span>
                   <input
                     type="text"
-                    value={editForm.name}
+                    value={editForm.name || ''}
                     onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
                     className="rect-input w-full px-2.5 py-1.5 text-xs mt-1"
                     required
@@ -1336,7 +1374,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   <div>
                     <span className="font-semibold text-slate-300">Team:</span>
                     <select
-                      value={editForm.team}
+                      value={editForm.team || ''}
                       onChange={(e) => setEditForm(prev => ({ ...prev, team: e.target.value }))}
                       className="rect-input w-full px-2 py-1.5 text-xs bg-[#0B172B] text-slate-200 mt-1 cursor-pointer"
                     >
@@ -1346,7 +1384,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   <div>
                     <span className="font-semibold text-slate-300">Role:</span>
                     <select
-                      value={editForm.role}
+                      value={editForm.role || ''}
                       onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
                       className="rect-input w-full px-2 py-1.5 text-xs bg-[#0B172B] text-slate-200 mt-1 cursor-pointer"
                     >
@@ -1375,7 +1413,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 </label>
                 <input
                   type="text"
-                  value={editForm.rollNo}
+                  value={editForm.rollNo || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, rollNo: e.target.value }))}
                   placeholder="e.g. 21B001"
                   className="rect-input w-full px-3.5 py-2 text-xs"
@@ -1387,13 +1425,18 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
                   Department
                 </label>
-                <input
-                  type="text"
-                  value={editForm.department}
+                <select
+                  value={editForm.department || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, department: e.target.value }))}
-                  placeholder="e.g. Computer Science"
-                  className="rect-input w-full px-3.5 py-2 text-xs"
-                />
+                  className="rect-input w-full px-3.5 py-2 text-xs bg-[#0C1A30]"
+                >
+                  <option value="">Select Department</option>
+                  {DEPARTMENTS.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Year */}
@@ -1401,13 +1444,18 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
                   Year of Study
                 </label>
-                <input
-                  type="text"
-                  value={editForm.year}
+                <select
+                  value={editForm.year || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, year: e.target.value }))}
-                  placeholder="e.g. 2 or 3"
-                  className="rect-input w-full px-3.5 py-2 text-xs"
-                />
+                  className="rect-input w-full px-3.5 py-2 text-xs bg-[#0C1A30]"
+                >
+                  <option value="">Select Year</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
               </div>
 
               {/* Phone */}
@@ -1417,7 +1465,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 </label>
                 <input
                   type="text"
-                  value={editForm.phone}
+                  value={editForm.phone || ''}
                   onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
                   placeholder="e.g. 9876543210"
                   className="rect-input w-full px-3.5 py-2 text-xs"
@@ -1439,6 +1487,144 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   className="btn-sky-glow px-4 py-2 text-xs font-semibold disabled:opacity-50 cursor-pointer"
                 >
                   {editSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Bulk Import Modal */}
+      {importModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-[#050B14]/80 backdrop-blur-sm"
+            onClick={() => !importSaving && setImportModalOpen(false)}
+          />
+          <div className="rect-card bg-[#0B172B] w-full max-w-2xl relative z-10 flex flex-col max-h-[90vh] shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-white/[0.08] flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Bulk Import Members</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Paste CSV data (Name, Team, Role, Roll No, Department, Year, Phone)
+                </p>
+              </div>
+              <button
+                onClick={() => !importSaving && setImportModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-md transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!importCsvText.trim()) return;
+                setImportSaving(true);
+                setImportError(null);
+                setImportSuccess(null);
+                try {
+                  const res = await fetch('/api/members/import', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'text/csv',
+                      Authorization: `Bearer ${localStorage.getItem('token')}`,
+                    },
+                    body: importCsvText,
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || 'Import failed');
+                  if (data.invalid > 0) {
+                    setImportError(`Imported ${data.valid}, but failed ${data.invalid}. Check your data.`);
+                  } else {
+                    setImportSuccess(`Successfully imported ${data.valid} members! Reloading...`);
+                    setTimeout(() => window.location.reload(), 1500);
+                  }
+                } catch (err: any) {
+                  setImportError(err.message || 'Error importing members');
+                } finally {
+                  setImportSaving(false);
+                }
+              }}
+              className="p-6 flex flex-col gap-4 flex-1 min-h-0"
+            >
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <label className="btn-rect-secondary flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer border-dashed border-sky-500/30 hover:border-sky-400">
+                  <Upload className="w-3.5 h-3.5" /> Select CSV File
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        if (ev.target?.result) setImportCsvText(ev.target.result as string);
+                      };
+                      reader.readAsText(file);
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const content = `"Name","Team","Role","Roll No","Department","Year","Phone"\n`;
+                    const blob = new Blob([content], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'erm_members_template.csv';
+                    a.click();
+                  }}
+                  className="btn-rect-secondary flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download Template
+                </button>
+              </div>
+              <div className="flex-1 bg-[#0C1A30] border border-white/10 p-4 font-mono text-xs text-slate-300 flex flex-col justify-center items-center rounded-md min-h-[150px]">
+                {importCsvText ? (
+                  <div className="flex flex-col items-center gap-2 text-sky-400">
+                    <FileText className="w-8 h-8" />
+                    <span>File loaded. {importCsvText.split('\n').length} rows detected.</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-slate-500">
+                    <span>No file selected</span>
+                    <span className="text-[10px] uppercase tracking-wide mt-2">Required Headers:</span>
+                    <span className="text-[10px] uppercase tracking-wide text-sky-500/70">"Name", "Team", "Role", "Roll No", "Department", "Year", "Phone"</span>
+                  </div>
+                )}
+              </div>
+
+              {importError && (
+                <div className="p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{importError}</span>
+                </div>
+              )}
+              {importSuccess && (
+                <div className="p-3 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{importSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setImportModalOpen(false)}
+                  disabled={importSaving}
+                  className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={importSaving || !importCsvText.trim()}
+                  className="btn-sky-glow px-6 py-2 text-xs font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {importSaving ? 'Importing...' : 'Start Import'}
                 </button>
               </div>
             </form>

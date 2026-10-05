@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Clock, Users, ArrowRight, ChevronLeft, Check, X, FileText, Search, UserX, Trash2, AlertCircle } from 'lucide-react';
+import { Calendar, Plus, Clock, Users, ArrowRight, ChevronLeft, Check, X, FileText, Search, UserX, Trash2, AlertCircle, Download } from 'lucide-react';
 import type { Member } from './AdminDashboard';
 import { isUpcoming, opensLabel } from './sessionTime';
 import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
@@ -133,11 +133,67 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     }
   };
 
+  const handleExitSession = async () => {
+    if (activeSession && !isUpcoming(activeSession)) {
+      const allTargets = targetsOf(activeSession, members);
+      const unmarkedTargets = allTargets.filter(m => !activeSession.records[m.id]);
+      
+      if (unmarkedTargets.length > 0) {
+        const defaultRecords: Record<string, { status: string }> = {};
+        unmarkedTargets.forEach(m => {
+          defaultRecords[m.id] = { status: 'ABSENT' };
+        });
+
+        // Fire and forget
+        fetch(`/api/sessions/${activeSession.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ records: defaultRecords })
+        }).catch(err => console.error('Failed to mark remaining members absent', err));
+      }
+    }
+    setActiveSession(null);
+  };
+
   /**
    * Mark every listed member (the selected vertical, or all) with one status.
    * Re-reads the session first so marks made meanwhile (e.g. by team leads) are kept,
    * then saves the merged map in one PATCH.
    */
+  const downloadSessionCSV = () => {
+    if (!activeSession) return;
+    const allTargets = targetsOf(activeSession, members);
+    const statusOf = (id: string) => activeSession.records[id]?.status || 'UNMARKED';
+
+    const headers = ['Name', 'Team', 'Role', 'Roll No', 'Department', 'Year', 'Phone', 'Status'];
+    const data = allTargets.sort((a, b) => byTeam(a.team, b.team) || byRoleThenName(a, b)).map(m => [
+      `"${m.name || ''}"`,
+      `"${m.team || ''}"`,
+      `"${m.role || ''}"`,
+      `"${m.rollNo || '-'}"`,
+      `"${m.department || '-'}"`,
+      `"${m.year || '-'}"`,
+      `"${m.phone || '-'}"`,
+      `"${statusOf(m.id)}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...data.map(row => row.join(','))].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `session_${activeSession.title}_${activeSession.date}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
   const handleBulkMark = async (status: 'PRESENT' | 'ABSENT', list: Member[], label: string) => {
     if (!activeSession || list.length === 0 || isUpcoming(activeSession)) return;
     if (list.length > 60 && !window.confirm(`Mark all ${list.length} members of ${label} ${status.toLowerCase()}?`)) return;
@@ -302,7 +358,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   if (activeSession) {
     const allTargets = targetsOf(activeSession, members);
     const upcoming = isUpcoming(activeSession); // not started: no marking, nothing counted
-    const statusOf = (id: string) => activeSession.records[id]?.status || 'ABSENT'; // unmarked = absent
+    const statusOf = (id: string) => activeSession.records[id]?.status || 'UNMARKED'; // unmarked = visually unmarked, mathematically absent
 
     // Header numbers are for the whole session (not the search / selected vertical)
     const presentCount = allTargets.filter(m => statusOf(m.id) === 'PRESENT').length;
@@ -348,7 +404,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
             {/* Top Row: Info & Stats */}
             <div className="flex flex-wrap items-start gap-3 sm:gap-4">
               <button
-                onClick={() => setActiveSession(null)}
+                onClick={handleExitSession}
                 className="p-2 -ml-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-md transition-colors cursor-pointer"
                 title="Back to Sessions"
               >
@@ -377,6 +433,13 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               </div>
 
               <div className="flex gap-2 sm:gap-3 items-center shrink-0 ml-auto">
+                <button
+                  onClick={downloadSessionCSV}
+                  title="Download CSV"
+                  className="p-2.5 rounded-md border border-white/10 text-slate-400 hover:text-sky-400 hover:bg-sky-500/10 transition-colors cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
                 <button
                   onClick={() => openDeleteSession(activeSession)}
                   title="Delete session"
@@ -544,7 +607,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     )}
                 {group.rows.map(member => {
                   const record = activeSession.records[member.id];
-                  const status = upcoming ? 'UPCOMING' : (record?.status || 'ABSENT'); // Default is ABSENT
+                  const status = upcoming ? 'UPCOMING' : (record?.status || 'UNMARKED'); // Default is UNMARKED visually
                   const isPresent = status === 'PRESENT';
                   const isAbsent = status === 'ABSENT';
                   const isInformed = status === 'INFORMED';
@@ -567,7 +630,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                       <td className="px-4 sm:px-6 py-3 text-right">
                         <div className="inline-flex items-center gap-1.5 p-1 bg-[#0B172B] border border-white/10 rounded-md">
                           <button
-                            onClick={() => handleMarkAttendance(member.id, isPresent ? 'ABSENT' : 'PRESENT')}
+                            onClick={() => handleMarkAttendance(member.id, isPresent ? 'UNMARKED' : 'PRESENT')}
                             disabled={upcoming}
                             title={upcoming ? 'Opens when the meeting starts' : undefined}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -580,7 +643,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                             <span>Present</span>
                           </button>
                           <button
-                            onClick={() => handleMarkAttendance(member.id, 'ABSENT')}
+                            onClick={() => handleMarkAttendance(member.id, isAbsent ? 'UNMARKED' : 'ABSENT')}
                             disabled={upcoming}
                             title={upcoming ? 'Opens when the meeting starts' : undefined}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -593,7 +656,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                             <span>Absent</span>
                           </button>
                           <button
-                            onClick={() => handleMarkAttendance(member.id, 'INFORMED')}
+                            onClick={() => handleMarkAttendance(member.id, isInformed ? 'UNMARKED' : 'INFORMED')}
                             disabled={upcoming}
                             title={upcoming ? 'Opens when the meeting starts' : undefined}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${

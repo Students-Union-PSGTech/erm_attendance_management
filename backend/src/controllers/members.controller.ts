@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { Member } from '../models/Member';
-import { resolveTeamScope } from '../middleware/auth';
+import { resolveTeamScope, currentUser } from '../middleware/auth';
 import { importMembers, removeMembersFromSessions } from '../services/member.service';
 import { memberHistory } from '../services/stats.service';
 import { membersToCsv, parseMembersCsv } from '../utils/csv';
@@ -102,6 +102,10 @@ export async function importMembersCsv(req: Request, res: Response) {
     throw badRequest('Send the CSV file contents as the request body with Content-Type: text/csv');
   }
   const { members, errors } = parseMembersCsv(req.body);
+  const user = currentUser(req);
+  if (user.role === 'team' && user.team) {
+    members.forEach(m => m.team = user.team as any);
+  }
   const dryRun = req.query.dryRun === 'true';
   const result = await importMembers(members, { replace: req.query.replace === 'true', dryRun });
   res.json({ ...result, valid: members.length, invalid: errors.length, errors, dryRun });

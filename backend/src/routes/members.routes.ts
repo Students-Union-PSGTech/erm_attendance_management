@@ -9,7 +9,7 @@ membersRouter.use(requireAuth);
 
 // Static paths before /:id
 membersRouter.get('/export.csv', members.exportMembers);
-membersRouter.post('/import', requireAdmin, members.importMembersCsv);
+membersRouter.post('/import', members.importMembersCsv);
 
 membersRouter.get('/', members.listMembers);
 membersRouter.get('/:id', members.getMember);

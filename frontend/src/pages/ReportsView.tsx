@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, Users, TrendingUp, CalendarDays, Activity, Search } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+
 import type { Member } from './AdminDashboard';
 import { isUpcoming, opensLabel } from './sessionTime';
 
@@ -128,67 +127,63 @@ export default function ReportsView({ members }: ReportsViewProps) {
     fetchStats();
   }, [members]);
 
-  const downloadMembersPDF = () => {
+  const downloadMembersCSV = () => {
     if (!members.length) return;
-    const doc = new jsPDF();
-    doc.text('Member Directory Report', 14, 15);
-    doc.setFontSize(9);
-    doc.text(`Generated on ${new Date().toLocaleDateString()}`, 14, 22);
-
-    const headers = [['Name', 'Team', 'Role', 'Roll No', 'Department', 'Year', 'Phone']];
+    
+    const headers = ['Name', 'Team', 'Role', 'Roll No', 'Department', 'Year', 'Phone'];
     const data = [...members].sort(byTeamRoleName).map(m => [
-      m.name,
-      m.team,
-      m.role,
-      m.rollNo || '-',
-      m.department || '-',
-      m.year || '-',
-      m.phone || '-'
+      `"${m.name || ''}"`,
+      `"${m.team || ''}"`,
+      `"${m.role || ''}"`,
+      `"${m.rollNo || '-'}"`,
+      `"${m.department || '-'}"`,
+      `"${m.year || '-'}"`,
+      `"${m.phone || '-'}"`
     ]);
 
-    autoTable(doc, {
-      head: headers,
-      body: data,
-      startY: 28,
-      styles: { fontSize: 8, cellPadding: 3 },
-      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [245, 247, 250] },
-      margin: { top: 28 }
-    });
-
-    doc.save(`members_export_${new Date().toISOString().split('T')[0]}.pdf`);
+    const csvContent = [headers.join(','), ...data.map(row => row.join(','))].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `members_export_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
-  const downloadAttendancePDF = () => {
+  const downloadAttendanceCSV = () => {
     if (!attendanceStats.length) return;
-    const doc = new jsPDF();
-    doc.text('Cumulative Attendance Report', 14, 15);
-    doc.setFontSize(9);
-    doc.text(`Generated on ${new Date().toLocaleDateString()}`, 14, 22);
-
-    const headers = [['Name', 'Team', 'Role', 'Present', 'Absent', 'Informed', 'Total Meets', 'Attendance %']];
+    
+    const headers = ['Name', 'Team', 'Role', 'Present', 'Absent', 'Informed', 'Total Meets', 'Attendance %'];
     const data = attendanceStats.map(s => [
-      s.name,
-      s.team,
-      s.role,
+      `"${s.name || ''}"`,
+      `"${s.team || ''}"`,
+      `"${s.role || ''}"`,
       s.present,
       s.absent,
       s.informed,
       s.total,
-      `${s.presentPct}%`
+      `"${s.presentPct}%"`
     ]);
 
-    autoTable(doc, {
-      head: headers,
-      body: data,
-      startY: 28,
-      styles: { fontSize: 8, cellPadding: 3 },
-      headStyles: { fillColor: [39, 174, 96], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [245, 247, 250] },
-      margin: { top: 28 }
-    });
+    const csvContent = [headers.join(','), ...data.map(row => row.join(','))].join('\n');
 
-    doc.save(`attendance_export_${new Date().toISOString().split('T')[0]}.pdf`);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `attendance_export_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   if (loading) {
@@ -246,21 +241,21 @@ export default function ReportsView({ members }: ReportsViewProps) {
               <Download className="w-4 h-4 text-sky-400" />
               Data Exports & Reports
             </h2>
-            <p className="text-xs text-slate-400 mb-6">Export detailed member and attendance reports in clean PDF format.</p>
+            <p className="text-xs text-slate-400 mb-6">Export detailed member and attendance reports in clean CSV format.</p>
             <div className="flex flex-col sm:flex-row gap-4">
               <button
-                onClick={downloadMembersPDF}
+                onClick={downloadMembersCSV}
                 className="btn-sky-glow flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
                 <Users className="w-4 h-4" />
-                Download Members PDF
+                Download Members CSV
               </button>
               <button
-                onClick={downloadAttendancePDF}
+                onClick={downloadAttendanceCSV}
                 className="btn-rect-secondary flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
                 <Activity className="w-4 h-4 text-emerald-400" />
-                Download Attendance PDF
+                Download Attendance CSV
               </button>
             </div>
           </div>
