@@ -263,6 +263,12 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   // Attendance View Selected Session
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
+  const [sessionPermissionMode, setSessionPermissionMode] = useState<'view' | 'edit'>('view');
+
+  const openSession = (sessionId: string, mode: 'view' | 'edit') => {
+    setSelectedSessionId(sessionId);
+    setSessionPermissionMode(mode);
+  };
 
   // Member History Modal
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -464,28 +470,25 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     return sessions.find((s) => s.id === selectedSessionId) || null;
   }, [sessions, selectedSessionId]);
 
-  // Attendance breakdown for active session
+  // Attendance breakdown for active session (Absent = Total - Present)
   const activeSessionStats = useMemo(() => {
+    const total = members.length;
     if (!activeSession) {
-      return { present: 0, absent: members.length, informed: 0, unmarked: 0, total: members.length };
+      return { present: 0, absent: total, total };
     }
     const recs = activeSession.records || {};
     let present = 0;
-    let absent = 0;
-    let informed = 0;
 
     members.forEach((m) => {
       const rec = recs[m.id];
-      const status = rec ? rec.status : 'ABSENT';
-      if (status === 'PRESENT') present++;
-      else if (status === 'INFORMED') informed++;
-      else absent++;
+      if (rec?.status === 'PRESENT') present++;
     });
 
-    return { present, absent, informed, unmarked: 0, total: members.length };
+    const absent = total - present;
+    return { present, absent, total };
   }, [activeSession, members]);
 
-  // Members list with status for active session
+  // Members list with status for active session (initially neutral/UNMARKED)
   const sessionMembersList = useMemo(() => {
     if (!activeSession) return [];
     const records = activeSession.records || {};
@@ -494,7 +497,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
     return targetMembers.map((m) => {
       const rec = records[m.id];
-      const status: 'PRESENT' | 'ABSENT' | 'INFORMED' = rec ? (rec.status as any) : 'ABSENT';
+      const status: 'PRESENT' | 'UNMARKED' = rec?.status === 'PRESENT' ? 'PRESENT' : 'UNMARKED';
       return {
         ...m,
         status,
@@ -733,6 +736,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     memberId: string,
     status: SessionRecord['status'] | null,
   ): Promise<boolean> => {
+    if (sessionPermissionMode === 'view') {
+      flash('error', 'Cannot mark attendance in View Mode (Read-Only). Switch to Edit Mode.');
+      return false;
+    }
     if (isUpcoming(session)) {
       flash('error', `This meeting hasn't started yet. ${opensLabel(session)}.`);
       return false;
@@ -770,7 +777,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   };
 
   const handleUpdateSessionRemarks = async (notes: string) => {
-    if (!activeSession) return;
+    if (!activeSession || sessionPermissionMode === 'view') return;
     if (activeSession.notes === notes) return;
 
     const previousSession = { ...activeSession };
@@ -790,9 +797,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     }
   };
 
-  /** Bulk mark all members in the current view. */
-  const handleBulkMark = async (status: SessionRecord['status']) => {
-    if (!activeSession || isUpcoming(activeSession)) return; // can't mark before the meeting starts
+  /** Bulk mark all members in the current view ('PRESENT' or 'CLEAR'). */
+  const handleBulkMark = async (action: 'PRESENT' | 'CLEAR') => {
+    if (!activeSession || isUpcoming(activeSession) || sessionPermissionMode === 'view') return;
     const targets = sessionMembersList;
     if (targets.length === 0) return;
 
@@ -800,9 +807,15 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
     const now = new Date().toISOString();
     const updatedRecords = { ...(activeSession.records || {}) };
-    targets.forEach(m => {
-      updatedRecords[m.id] = { status, markedAt: now };
-    });
+    if (action === 'PRESENT') {
+      targets.forEach(m => {
+        updatedRecords[m.id] = { status: 'PRESENT', markedAt: now };
+      });
+    } else {
+      targets.forEach(m => {
+        delete updatedRecords[m.id];
+      });
+    }
 
     const previousSession = { ...activeSession };
 
@@ -818,9 +831,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         await Promise.all(targets.slice(i, i + 6).map(async (m) => {
           try {
             const res = await fetch(`/api/sessions/${sessionId}/records/${m.id}`, {
-              method: 'PUT',
+              method: action === 'PRESENT' ? 'PUT' : 'DELETE',
               headers: getAuthHeaders(),
-              body: JSON.stringify({ status }),
+              ...(action === 'PRESENT' && { body: JSON.stringify({ status: 'PRESENT' }) }),
             });
             if (!res.ok) throw new Error(errorText(await readJson(res), res.status));
           } catch {
@@ -831,7 +844,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       // put back the previous mark for anyone that didn't save
       failed.forEach((id) => setLocalRecord(sessionId, id, previousSession.records?.[id]));
       if (failed.length === 0) {
-        flash('success', `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} ${status.toLowerCase()}`);
+        flash('success', action === 'PRESENT' ? `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} present` : `Reset ${targets.length} member${targets.length === 1 ? '' : 's'} to unmarked`);
       } else {
         flash('error', `Saved ${targets.length - failed.length} of ${targets.length}; ${failed.length} could not be saved. Try again.`);
       }
@@ -848,7 +861,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
       if (!res.ok) throw new Error(`Bulk mark failed (${res.status})`);
 
-      flash('success', `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} ${status.toLowerCase()}`);
+      flash('success', action === 'PRESENT' ? `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} present` : `Reset ${targets.length} member${targets.length === 1 ? '' : 's'} to unmarked`);
     } catch (err: any) {
       console.error(err);
       // Revert optimistic
@@ -1693,17 +1706,19 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => handleOpenHistory(m)}
-                                  title="View Attendance History"
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer"
+                                  title="View Attendance History (Read-Only)"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/20 text-xs font-semibold cursor-pointer transition-colors"
                                 >
-                                  <Eye className="w-4 h-4" />
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>View</span>
                                 </button>
                                 <button
                                   onClick={() => handleOpenEdit(m)}
-                                  title="Edit Member Details"
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer"
+                                  title="Edit Member Details (Read + Write)"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-xs font-semibold cursor-pointer transition-colors"
                                 >
-                                  <Edit3 className="w-4 h-4" />
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  <span>Edit</span>
                                 </button>
                               </div>
                             </td>
@@ -1814,7 +1829,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         return (
                           <div
                             key={session.id}
-                            onClick={() => setSelectedSessionId(session.id)}
+                            onClick={() => openSession(session.id, 'view')}
                             className="rect-card p-5 hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(14,165,233,0.12)] transition-all cursor-pointer group"
                           >
                             <div className="flex items-start justify-between mb-4">
@@ -1835,20 +1850,35 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                   {session.title}
                                 </h3>
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
+                              <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => openSession(session.id, 'view')}
+                                  title="View Attendance (Read-Only)"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500/20 text-xs font-semibold cursor-pointer transition-colors"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>View</span>
+                                </button>
+                                {canMark(session) && (
+                                  <button
+                                    onClick={() => openSession(session.id, 'edit')}
+                                    title="Edit Attendance (Read + Write)"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-xs font-semibold cursor-pointer transition-colors"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                    <span>Edit</span>
+                                  </button>
+                                )}
                                 {canManage(session) && (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); setDeletingMeeting(session); }}
+                                    onClick={() => setDeletingMeeting(session)}
                                     title="Delete session"
                                     aria-label={`Delete ${session.title}`}
-                                    className="p-1.5 rounded-sm text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                                    className="p-1.5 rounded-sm text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer ml-0.5"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 )}
-                                <div className="bg-sky-950/60 border border-sky-500/30 text-sky-400 p-2 rounded-sm group-hover:bg-sky-600 group-hover:text-white transition-colors">
-                                  <ArrowRight className="w-4 h-4" />
-                                </div>
                               </div>
                             </div>
 
@@ -1922,7 +1952,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           </div>
                           <div className="flex items-center gap-3">
                             <h2 className="text-lg font-bold text-white uppercase tracking-wide">{activeSession.title}</h2>
-                            {canManage(activeSession) && (
+                            {canManage(activeSession) && sessionPermissionMode === 'edit' && (
                               <button
                                 onClick={() => setDeletingMeeting(activeSession)}
                                 title="Delete session"
@@ -1935,8 +1965,43 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         </div>
                       </div>
 
-                      {canManage(activeSession) ? (
-                        <div className="mt-2 w-full lg:w-3/4">
+                      {/* Mode indicator & Permission Switcher */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-slate-400">Current Access:</span>
+                          {sessionPermissionMode === 'view' ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-300 font-bold font-mono text-xs">
+                              <Eye className="w-3.5 h-3.5" /> View Mode (Read-Only)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold font-mono text-xs">
+                              <Edit3 className="w-3.5 h-3.5" /> Edit Mode (Read + Write)
+                            </span>
+                          )}
+                        </div>
+                        {canMark(activeSession) && (
+                          <button
+                            onClick={() => setSessionPermissionMode(m => m === 'view' ? 'edit' : 'view')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-semibold cursor-pointer transition-colors"
+                          >
+                            {sessionPermissionMode === 'view' ? (
+                              <>
+                                <Edit3 className="w-3.5 h-3.5 text-amber-400" /> Switch to Edit
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-3.5 h-3.5 text-sky-400" /> Switch to View
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Remarks section */}
+                    <div className="pt-3">
+                      {sessionPermissionMode === 'edit' && canManage(activeSession) ? (
+                        <div className="w-full">
                           <textarea
                             placeholder="Add session remarks here... (e.g. Special instructions, delays)"
                             defaultValue={activeSession.notes}
@@ -1946,11 +2011,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         </div>
                       ) : (
                         activeSession.notes && (
-                          <div className="flex items-center gap-2 mt-2 w-full lg:w-3/4">
-                            <div className="w-full text-xs text-slate-300 bg-[#050B14] px-3 py-2 rounded-sm border border-white/5 font-mono leading-relaxed whitespace-pre-wrap">
-                              <span className="font-bold text-sky-300 mr-2 uppercase">Remarks:</span>
-                              {activeSession.notes}
-                            </div>
+                          <div className="w-full text-xs text-slate-300 bg-[#050B14] px-3 py-2 rounded-sm border border-white/5 font-mono leading-relaxed whitespace-pre-wrap">
+                            <span className="font-bold text-sky-300 mr-2 uppercase">Remarks:</span>
+                            {activeSession.notes}
                           </div>
                         )
                       )}
@@ -1959,6 +2022,15 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     {/* Selected Session Stats Banner */}
                     {activeSession && (
                       <div className="pt-4 grid grid-cols-3 gap-3">
+                        <div className="p-3 rounded-md bg-white/[0.03] border border-white/10">
+                          <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide">
+                            Total Members
+                          </span>
+                          <div className="text-xl font-black text-white font-mono">
+                            {sessionMembersList.length}
+                          </div>
+                        </div>
+
                         <div className="p-3 rounded-md bg-emerald-950/40 border border-emerald-500/30">
                           <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wide">
                             Present
@@ -1974,15 +2046,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           </span>
                           <div className="text-xl font-black text-rose-300 font-mono">
                             {isUpcoming(activeSession) ? '—' : activeSessionStats.absent}
-                          </div>
-                        </div>
-
-                        <div className="p-3 rounded-md bg-sky-950/40 border border-sky-500/30">
-                          <span className="text-[10px] font-mono font-bold text-sky-300 uppercase tracking-wide">
-                            Informed
-                          </span>
-                          <div className="text-xl font-black text-sky-200 font-mono">
-                            {isUpcoming(activeSession) ? '—' : activeSessionStats.informed}
                           </div>
                         </div>
                       </div>
@@ -2009,8 +2072,10 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             <th className="hidden sm:table-cell px-6 py-3 text-slate-400 uppercase tracking-wider">Role</th>
                             <th className="px-3 sm:px-6 py-3 text-slate-400 uppercase tracking-wider">
                               <div className="flex flex-col sm:flex-row items-end sm:items-center justify-center gap-2 sm:gap-4">
-                                <span className={canMark(activeSession) ? 'hidden md:inline' : ''}>{canMark(activeSession) ? 'Mark Attendance' : 'Status'}</span>
-                                {canMark(activeSession) && (
+                                <span className={sessionPermissionMode === 'edit' && canMark(activeSession) ? 'hidden md:inline' : ''}>
+                                  {sessionPermissionMode === 'edit' && canMark(activeSession) ? 'Mark Attendance' : 'Status (Read-Only)'}
+                                </span>
+                                {sessionPermissionMode === 'edit' && canMark(activeSession) && (
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => handleBulkMark('PRESENT')}
@@ -2020,11 +2085,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                       All Present
                                     </button>
                                     <button
-                                      onClick={() => handleBulkMark('ABSENT')}
+                                      onClick={() => handleBulkMark('CLEAR')}
                                       disabled={bulkMarking || isUpcoming(activeSession)}
-                                      className="px-2.5 py-1 bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 border border-rose-500/40 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
+                                      className="px-2.5 py-1 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
                                     >
-                                      All Absent
+                                      Reset to Unmarked
                                     </button>
                                   </div>
                                 )}
@@ -2048,52 +2113,27 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                 </td>
                                 <td className="px-3 sm:px-6 py-3 whitespace-nowrap">
                                   <div className="flex items-center justify-end sm:justify-center gap-1.5 sm:gap-2">
-                                    {canMark(activeSession) ? (
-                                      <>
-                                        <button
-                                          onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
-                                          disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
-                                          title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                                            status === 'PRESENT'
-                                              ? 'bg-emerald-600 text-white shadow-[0_0_12px_rgba(16,185,129,0.5)] border border-emerald-400'
-                                              : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 border border-white/10'
-                                          }`}
-                                        >
-                                          <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Present</span>
-                                        </button>
-                                        <button
-                                          onClick={() => markMember(activeSession, m.id, 'ABSENT')}
-                                          disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
-                                          title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                                            status === 'ABSENT'
-                                              ? 'bg-rose-600 text-white shadow-[0_0_12px_rgba(244,63,94,0.5)] border border-rose-400'
-                                              : 'bg-white/5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 border border-white/10'
-                                          }`}
-                                        >
-                                          <X className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Absent</span>
-                                        </button>
-                                        <button
-                                          onClick={() => markMember(activeSession, m.id, 'INFORMED')}
-                                          disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
-                                          title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                                            status === 'INFORMED'
-                                              ? 'bg-sky-600 text-white shadow-[0_0_12px_rgba(14,165,233,0.5)] border border-sky-400'
-                                              : 'bg-white/5 text-slate-400 hover:text-sky-300 hover:bg-sky-950/40 border border-white/10'
-                                          }`}
-                                        >
-                                          <FileText className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Informed</span>
-                                        </button>
-                                      </>
+                                    {sessionPermissionMode === 'edit' && canMark(activeSession) ? (
+                                      <button
+                                        onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? null : 'PRESENT')}
+                                        disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
+                                        title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                          status === 'PRESENT'
+                                            ? 'bg-emerald-600 text-white shadow-[0_0_12px_rgba(16,185,129,0.5)] border border-emerald-400'
+                                            : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 border border-white/10'
+                                        }`}
+                                      >
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>{status === 'PRESENT' ? 'Present' : 'Mark Present'}</span>
+                                      </button>
                                     ) : (
                                       <span className={`px-3 py-1 rounded-sm text-xs font-bold font-mono uppercase ${
-                                        status === 'PRESENT' ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40' :
-                                        status === 'ABSENT' ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40' :
-                                        'bg-sky-950/60 text-sky-300 border border-sky-500/40'
+                                        status === 'PRESENT'
+                                          ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40'
+                                          : 'bg-slate-900/60 text-slate-400 border border-slate-700/40'
                                       }`}>
-                                        {status.charAt(0) + status.slice(1).toLowerCase()}
+                                        {status === 'PRESENT' ? 'Present' : 'Unmarked'}
                                       </span>
                                     )}
                                   </div>
@@ -2128,7 +2168,12 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             {/* Modal Header */}
             <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wide">Attendance History</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wide">Attendance History</h3>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-mono font-bold">
+                    <Eye className="w-3 h-3" /> View Mode (Read-Only)
+                  </span>
+                </div>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">
                   Detailed session attendance record for member
                 </p>
@@ -2210,7 +2255,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   </div>
 
                   {/* Summary Metric Counters */}
-                  <div className="grid grid-cols-4 gap-2 text-center font-mono">
+                  <div className="grid grid-cols-3 gap-2 text-center font-mono">
                     <div className="p-2.5 rounded-sm rect-card bg-white/[0.02]">
                       <div className="text-xs font-bold text-slate-200">
                         {selectedMemberHistory.stats.total}
@@ -2228,12 +2273,6 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                         {selectedMemberHistory.stats.absent}
                       </div>
                       <span className="text-[9px] uppercase">Absent</span>
-                    </div>
-                    <div className="p-2.5 rounded-sm bg-sky-950/40 border border-sky-500/30 text-sky-300">
-                      <div className="text-xs font-bold">
-                        {selectedMemberHistory.stats.informed}
-                      </div>
-                      <span className="text-[9px] uppercase">Informed</span>
                     </div>
                   </div>
 
@@ -2300,9 +2339,14 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
             {/* Modal Header */}
             <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wide">
-                  {editingMember ? 'Edit Member Details' : 'Add New Member'}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wide">
+                    {editingMember ? 'Edit Member Details' : 'Add New Member'}
+                  </h3>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-bold">
+                    <Edit3 className="w-3 h-3" /> Edit Mode (Read + Write)
+                  </span>
+                </div>
                 <p className="text-xs text-slate-400 font-mono mt-0.5">
                   {editingMember ? `Update contact or academic info for ${editingMember.name}` : `Add a new member to ${teamName} team`}
                 </p>

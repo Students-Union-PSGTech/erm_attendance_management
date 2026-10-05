@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Clock, Users, ArrowRight, ChevronLeft, Check, X, FileText, Search, UserX, Trash2, AlertCircle, Download } from 'lucide-react';
+import { Calendar, Plus, Clock, Users, ChevronLeft, Check, X, Search, UserX, Trash2, AlertCircle, Download, Eye, Edit3 } from 'lucide-react';
 import type { Member } from './AdminDashboard';
 import { isUpcoming, opensLabel } from './sessionTime';
 import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
@@ -45,6 +45,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSession, setActiveSession] = useState<AttendanceSession | null>(null);
+  const [sessionPermissionMode, setSessionPermissionMode] = useState<'view' | 'edit'>('view');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [sessionSearchQuery, setSessionSearchQuery] = useState('');
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
@@ -59,6 +60,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const openSession = (session: AttendanceSession, mode: 'view' | 'edit') => {
+    setActiveSession(session);
+    setSessionPermissionMode(mode);
+  };
 
   /** Team picker: ALL on its own, or any mix of verticals (saved as e.g. "TECH,DESIGN" in vertical order). */
   const toggleCreateTeam = (team: string) => {
@@ -110,59 +116,51 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     setBulkError(null);
   }, [activeSession?.id]);
 
-  const handleMarkAttendance = async (memberId: string, status: string) => {
-    if (!activeSession || isUpcoming(activeSession)) return; // can't mark before the meeting starts
+  const handleMarkAttendance = async (memberId: string, currentStatus: string) => {
+    if (!activeSession || isUpcoming(activeSession) || sessionPermissionMode === 'view') return;
 
-    // Optimistic update
-    const updatedRecords = { ...activeSession.records, [memberId]: { status, markedAt: new Date().toISOString() } };
+    // Toggle: if currently PRESENT, unmark back to neutral via DELETE endpoint
+    // If not PRESENT, mark PRESENT via PUT endpoint
+    const willBePresent = currentStatus !== 'PRESENT';
+    const updatedRecords = { ...activeSession.records };
+
+    if (willBePresent) {
+      updatedRecords[memberId] = { status: 'PRESENT', markedAt: new Date().toISOString() };
+    } else {
+      delete updatedRecords[memberId];
+    }
+
     setActiveSession({ ...activeSession, records: updatedRecords });
     setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, records: updatedRecords } : s));
 
     try {
-      await fetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ status })
-      });
+      if (willBePresent) {
+        await fetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({ status: 'PRESENT' })
+        });
+      } else {
+        await fetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+      }
     } catch (err) {
       console.error('Failed to mark attendance:', err);
       fetchSessions(); // revert on fail
     }
   };
 
-  const handleExitSession = async () => {
-    if (activeSession && !isUpcoming(activeSession)) {
-      const allTargets = targetsOf(activeSession, members);
-      const unmarkedTargets = allTargets.filter(m => !activeSession.records[m.id]);
-      
-      if (unmarkedTargets.length > 0) {
-        const defaultRecords: Record<string, { status: string }> = {};
-        unmarkedTargets.forEach(m => {
-          defaultRecords[m.id] = { status: 'ABSENT' };
-        });
-
-        // Fire and forget
-        fetch(`/api/sessions/${activeSession.id}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({ records: defaultRecords })
-        }).catch(err => console.error('Failed to mark remaining members absent', err));
-      }
-    }
+  const handleExitSession = () => {
     setActiveSession(null);
   };
 
-  /**
-   * Mark every listed member (the selected vertical, or all) with one status.
-   * Re-reads the session first so marks made meanwhile (e.g. by team leads) are kept,
-   * then saves the merged map in one PATCH.
-   */
   const downloadSessionCSV = () => {
     if (!activeSession) return;
     const allTargets = targetsOf(activeSession, members);
@@ -194,10 +192,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
       document.body.removeChild(link);
     }
   };
-  const handleBulkMark = async (status: 'PRESENT' | 'ABSENT', list: Member[], label: string) => {
-    if (!activeSession || list.length === 0 || isUpcoming(activeSession)) return;
-    if (list.length > 60 && !window.confirm(`Mark all ${list.length} members of ${label} ${status.toLowerCase()}?`)) return;
-    setBulkBusy(status);
+
+  const handleBulkMark = async (action: 'PRESENT' | 'CLEAR', list: Member[], label: string) => {
+    if (!activeSession || list.length === 0 || isUpcoming(activeSession) || sessionPermissionMode === 'view') return;
+    if (list.length > 60 && !window.confirm(action === 'PRESENT' ? `Mark all ${list.length} members of ${label} present?` : `Reset all ${list.length} members of ${label} to unmarked?`)) return;
+    setBulkBusy(action);
     setBulkError(null);
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` };
     const known = new Set(members.map(m => m.id));
@@ -207,9 +206,13 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
       const base: AttendanceSession['records'] = latest?.records || activeSession.records || {};
       const now = new Date().toISOString();
       const records: AttendanceSession['records'] = {};
-      // keep existing marks for current members only (the API rejects ids of deleted members)
       Object.entries(base).forEach(([id, r]) => { if (known.has(id)) records[id] = r; });
-      list.forEach(m => { records[m.id] = { status, markedAt: now }; });
+      if (action === 'PRESENT') {
+        list.forEach(m => { records[m.id] = { status: 'PRESENT', markedAt: now }; });
+      } else {
+        // Reset to neutral / unmarked
+        list.forEach(m => { delete records[m.id]; });
+      }
 
       const res = await fetch(`/api/sessions/${activeSession.id}`, {
         method: 'PATCH',
@@ -357,15 +360,15 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
   if (activeSession) {
     const allTargets = targetsOf(activeSession, members);
-    const upcoming = isUpcoming(activeSession); // not started: no marking, nothing counted
-    const statusOf = (id: string) => activeSession.records[id]?.status || 'UNMARKED'; // unmarked = visually unmarked, mathematically absent
+    const upcoming = isUpcoming(activeSession);
+    const statusOf = (id: string) => activeSession.records[id]?.status || 'UNMARKED';
 
-    // Header numbers are for the whole session (not the search / selected vertical)
+    // Header numbers are for the whole session
     const presentCount = allTargets.filter(m => statusOf(m.id) === 'PRESENT').length;
     const absentCount = allTargets.length - presentCount;
     const totalCount = allTargets.length;
 
-    // One card per vertical in this session (ALL sessions have all six)
+    // One card per vertical in this session
     const detailTeams = Array.from(new Set(allTargets.map(m => m.team))).sort(byTeam);
     const showTeamCards = detailTeams.length > 1;
     const currentTeam = !showTeamCards
@@ -374,8 +377,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     const teamCards = detailTeams.map(team => {
       const list = allTargets.filter(m => m.team === team);
       const present = list.filter(m => statusOf(m.id) === 'PRESENT').length;
-      const informed = list.filter(m => statusOf(m.id) === 'INFORMED').length;
-      return { team, total: list.length, present, informed };
+      return { team, total: list.length, present, absent: list.length - present };
     });
 
     let targetMembers = currentTeam === 'ALL' ? allTargets : allTargets.filter(m => m.team === currentTeam);
@@ -398,7 +400,45 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
     return (
       <div className="flex flex-col pb-6 animate-in fade-in duration-300">
-        {/* Active Session Header Card (Perfect Rectangular) */}
+        {/* Permission Mode Banner */}
+        <div className="rect-card p-3 mb-3 flex flex-wrap items-center justify-between gap-3 border border-white/10 bg-[#071326]">
+          <div className="flex items-center gap-2.5">
+            <span className={`px-2.5 py-1 rounded text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 ${
+              sessionPermissionMode === 'view'
+                ? 'bg-sky-500/15 text-sky-300 border border-sky-500/40 shadow-[0_0_12px_rgba(14,165,233,0.2)]'
+                : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+            }`}>
+              {sessionPermissionMode === 'view' ? <Eye className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
+              {sessionPermissionMode === 'view' ? 'View Mode (Read-Only)' : 'Edit Mode (Read + Write)'}
+            </span>
+            <span className="text-xs text-slate-300 hidden sm:inline">
+              {sessionPermissionMode === 'view'
+                ? 'Preview mode · Attendance records cannot be edited'
+                : 'Editing enabled · Mark members Present or reset records'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            {sessionPermissionMode === 'view' ? (
+              <button
+                onClick={() => setSessionPermissionMode('edit')}
+                className="px-3 py-1.5 rounded-md text-xs font-bold border border-sky-500/50 bg-sky-500/20 hover:bg-sky-500 hover:text-white text-sky-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Switch to Edit</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setSessionPermissionMode('view')}
+                className="px-3 py-1.5 rounded-md text-xs font-bold border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Switch to View</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Active Session Header Card */}
         <div className="rect-card p-5 mb-4 shrink-0">
           <div className="flex flex-col gap-4">
             {/* Top Row: Info & Stats */}
@@ -440,13 +480,15 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 >
                   <Download className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => openDeleteSession(activeSession)}
-                  title="Delete session"
-                  className="p-2.5 rounded-md border border-white/10 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {sessionPermissionMode === 'edit' && (
+                  <button
+                    onClick={() => openDeleteSession(activeSession)}
+                    title="Delete session"
+                    className="p-2.5 rounded-md border border-white/10 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
                 <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 sm:px-4 py-2 text-center min-w-[70px]">
                   <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-0.5">Present</p>
                   <p className="text-2xl font-black text-emerald-300 leading-none">{upcoming ? '—' : presentCount}</p>
@@ -462,10 +504,13 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
             <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 sm:ml-9">
               <div className="flex-1">
                 <textarea
-                  placeholder="Add session remarks here... (e.g. Special instructions, delays)"
+                  placeholder={sessionPermissionMode === 'view' ? "No session remarks." : "Add session remarks here... (e.g. Special instructions, delays)"}
                   defaultValue={activeSession.notes || ''}
+                  readOnly={sessionPermissionMode === 'view'}
                   onBlur={(e) => handleUpdateSessionRemarks(e.target.value)}
-                  className="rect-input w-full px-3.5 py-2 text-xs resize-none h-[42px] focus:h-20"
+                  className={`rect-input w-full px-3.5 py-2 text-xs resize-none h-[42px] focus:h-20 ${
+                    sessionPermissionMode === 'view' ? 'opacity-80 cursor-default bg-black/20' : ''
+                  }`}
                 />
               </div>
 
@@ -498,10 +543,10 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           </div>
         )}
 
-        {/* Vertical cards: mark one team at a time instead of scrolling the whole union */}
+        {/* Vertical cards */}
         {showTeamCards && (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-4 shrink-0">
-            {[{ team: 'ALL', total: totalCount, present: presentCount, informed: 0 }, ...teamCards].map(c => {
+            {[{ team: 'ALL', total: totalCount, present: presentCount }, ...teamCards].map(c => {
               const active = currentTeam === c.team;
               const pct = c.total ? Math.round((c.present / c.total) * 100) : 0;
               return (
@@ -511,7 +556,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                   className={`rect-card text-left px-3.5 py-3 cursor-pointer transition-all border ${
                     active ? 'border-sky-400/70 bg-sky-500/10 shadow-[0_0_18px_rgba(14,165,233,0.18)]' : 'border-white/10 hover:border-sky-500/40'
                   }`}
-                  title={c.team === 'ALL' ? 'All verticals, grouped by team' : `Mark ${c.team}`}
+                  title={c.team === 'ALL' ? 'All verticals, grouped by team' : `Filter ${c.team}`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className={`text-[11px] font-bold uppercase tracking-wider truncate ${active ? 'text-sky-300' : 'text-slate-300'}`}>
@@ -528,7 +573,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     />
                   </div>
                   <p className="text-[10px] text-slate-500 font-mono mt-1.5 truncate">
-                    {upcoming ? 'Upcoming' : `${pct}% present${c.informed ? ` · ${c.informed} informed` : ''}`}
+                    {upcoming ? 'Upcoming' : `${pct}% present`}
                   </p>
                 </button>
               );
@@ -536,7 +581,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           </div>
         )}
 
-        {/* Bulk marking for the selected vertical (or the whole session in "All") */}
+        {/* Bulk marking / actions */}
         {(() => {
           const scope = currentTeam === 'ALL' ? allTargets : allTargets.filter(m => m.team === currentTeam);
           const label = currentTeam === 'ALL' ? (showTeamCards ? 'all verticals' : 'this session') : currentTeam;
@@ -547,22 +592,33 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 <span className="font-bold text-white uppercase tracking-wider">{label}</span>
                 <span className="text-slate-500 font-mono ml-2">{scopePresent} / {scope.length} present</span>
               </p>
-              <button
-                onClick={() => handleBulkMark('PRESENT', scope, label)}
-                disabled={!!bulkBusy || scope.length === 0 || upcoming}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <Check className="w-3.5 h-3.5" />
-                {bulkBusy === 'PRESENT' ? 'Saving…' : <>All Present<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
-              </button>
-              <button
-                onClick={() => handleBulkMark('ABSENT', scope, label)}
-                disabled={!!bulkBusy || scope.length === 0 || upcoming}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-                {bulkBusy === 'ABSENT' ? 'Saving…' : <>All Absent<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
-              </button>
+
+              {sessionPermissionMode === 'edit' ? (
+                <>
+                  <button
+                    onClick={() => handleBulkMark('PRESENT', scope, label)}
+                    disabled={!!bulkBusy || scope.length === 0 || upcoming}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {bulkBusy === 'PRESENT' ? 'Saving…' : <>All Present<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
+                  </button>
+                  <button
+                    onClick={() => handleBulkMark('CLEAR', scope, label)}
+                    disabled={!!bulkBusy || scope.length === 0 || upcoming}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    {bulkBusy === 'CLEAR' ? 'Saving…' : <>Reset to Unmarked<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
+                  </button>
+                </>
+              ) : (
+                <span className="text-xs text-slate-400 font-mono italic flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-sky-400" />
+                  Read-only view · Bulk actions locked
+                </span>
+              )}
+
               {bulkError && (
                 <p className="w-full text-xs text-rose-300 flex items-center gap-1.5">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {bulkError}
@@ -572,9 +628,8 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           );
         })()}
 
-        {/* Member Marking Table (Crisp Rectangular Container) */}
+        {/* Member Marking Table */}
         <div className="rect-card overflow-hidden flex flex-col">
-          {/* Own scroll box, nearly a full screen tall, so the header row stays visible while marking */}
           <div className="overflow-auto max-h-[calc(100dvh-120px)] min-h-[320px]">
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-[#100D1B]/95 sticky top-0 z-10 border-b border-white/[0.08] backdrop-blur-md">
@@ -582,7 +637,9 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                   <th className="px-4 sm:px-6 py-3 font-semibold text-[#9490A6] uppercase tracking-wider">Member Details</th>
                   <th className="hidden sm:table-cell px-6 py-3 font-semibold text-[#9490A6] uppercase tracking-wider">Domain</th>
                   <th className="hidden sm:table-cell px-6 py-3 font-semibold text-[#9490A6] uppercase tracking-wider">Role</th>
-                  <th className="px-4 sm:px-6 py-3 text-right font-semibold text-[#9490A6] uppercase tracking-wider">Attendance Status</th>
+                  <th className="px-4 sm:px-6 py-3 text-right font-semibold text-[#9490A6] uppercase tracking-wider">
+                    {sessionPermissionMode === 'edit' ? 'Attendance Action' : 'Attendance Status'}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
@@ -607,10 +664,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     )}
                 {group.rows.map(member => {
                   const record = activeSession.records[member.id];
-                  const status = upcoming ? 'UPCOMING' : (record?.status || 'UNMARKED'); // Default is UNMARKED visually
-                  const isPresent = status === 'PRESENT';
-                  const isAbsent = status === 'ABSENT';
-                  const isInformed = status === 'INFORMED';
+                  const isPresent = record?.status === 'PRESENT';
 
                   return (
                     <tr
@@ -628,46 +682,34 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                         <span className="text-slate-300 font-medium">{member.role}</span>
                       </td>
                       <td className="px-4 sm:px-6 py-3 text-right">
-                        <div className="inline-flex items-center gap-1.5 p-1 bg-[#0B172B] border border-white/10 rounded-md">
-                          <button
-                            onClick={() => handleMarkAttendance(member.id, isPresent ? 'UNMARKED' : 'PRESENT')}
-                            disabled={upcoming}
-                            title={upcoming ? 'Opens when the meeting starts' : undefined}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                              isPresent
-                                ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                                : 'text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10'
-                            }`}
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Present</span>
-                          </button>
-                          <button
-                            onClick={() => handleMarkAttendance(member.id, isAbsent ? 'UNMARKED' : 'ABSENT')}
-                            disabled={upcoming}
-                            title={upcoming ? 'Opens when the meeting starts' : undefined}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                              isAbsent
-                                ? 'bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]'
-                                : 'text-slate-400 hover:text-rose-300 hover:bg-rose-500/10'
-                            }`}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>Absent</span>
-                          </button>
-                          <button
-                            onClick={() => handleMarkAttendance(member.id, isInformed ? 'UNMARKED' : 'INFORMED')}
-                            disabled={upcoming}
-                            title={upcoming ? 'Opens when the meeting starts' : undefined}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                              isInformed
-                                ? 'bg-sky-500 text-white shadow-[0_0_15px_rgba(14,165,233,0.4)]'
-                                : 'text-slate-400 hover:text-sky-300 hover:bg-sky-500/10'
-                            }`}
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Informed</span>
-                          </button>
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {/* Neutral / Marked Status Badge */}
+                          <span className={`px-2.5 py-1 rounded text-[11px] font-bold uppercase tracking-wider font-mono ${
+                            upcoming
+                              ? 'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'
+                              : isPresent
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-white/5 text-slate-400 border border-white/10'
+                          }`}>
+                            {upcoming ? 'Upcoming' : isPresent ? 'Present' : 'Unmarked'}
+                          </span>
+
+                          {/* Action Button: only visible and clickable in Edit mode */}
+                          {sessionPermissionMode === 'edit' && (
+                            <button
+                              onClick={() => handleMarkAttendance(member.id, isPresent ? 'PRESENT' : 'UNMARKED')}
+                              disabled={upcoming}
+                              title={upcoming ? 'Opens when the meeting starts' : isPresent ? 'Click to unmark' : 'Click to mark Present'}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                isPresent
+                                  ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-600'
+                                  : 'border border-white/10 bg-white/5 text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/40'
+                              }`}
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>{isPresent ? 'Marked' : 'Mark Present'}</span>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -816,7 +858,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
             return (
               <div
                 key={session.id}
-                onClick={() => setActiveSession(session)}
+                onClick={() => openSession(session, 'view')}
                 className="rect-card p-5 hover:border-sky-500/40 cursor-pointer group"
               >
                 <div className="flex items-start justify-between mb-4">
@@ -837,17 +879,30 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                       {session.title}
                     </h3>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); openDeleteSession(session); }}
+                      onClick={() => openSession(session, 'view')}
+                      title="View session (Read-only)"
+                      className="px-2.5 py-1.5 rounded-md text-xs font-semibold border border-white/10 bg-white/5 hover:bg-sky-500/15 hover:border-sky-500/40 text-slate-300 hover:text-sky-300 transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-sky-400" />
+                      <span>View</span>
+                    </button>
+                    <button
+                      onClick={() => openSession(session, 'edit')}
+                      title="Edit attendance (Read + Write)"
+                      className="px-2.5 py-1.5 rounded-md text-xs font-semibold border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500 hover:text-white text-sky-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={() => openDeleteSession(session)}
                       title="Delete session"
-                      className="p-2 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                    <div className="btn-rect-secondary p-2 group-hover:bg-sky-600 group-hover:text-white transition-colors">
-                      <ArrowRight className="w-4 h-4" />
-                    </div>
                   </div>
                 </div>
 
