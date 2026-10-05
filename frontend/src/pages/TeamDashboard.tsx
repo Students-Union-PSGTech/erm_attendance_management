@@ -488,7 +488,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     if (!activeSession) return [];
     const records = activeSession.records || {};
 
-    let targetMembers = [...members].sort((a, b) => a.name.localeCompare(b.name));
+    let targetMembers = [...members].sort(byRoleThenName);
 
     return targetMembers.map((m) => {
       const rec = records[m.id];
@@ -596,6 +596,15 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   /** Team logins can edit/delete only their own team's meetings (not ALL sessions). */
   const canManage = (s: AttendanceSession) => s.team === teamName;
+
+  /**
+   * Team logins can mark their OWN members in every meeting their team attends:
+   * their own meetings and admin-created ALL / multi-team ones (e.g. TECH,DESIGN).
+   */
+  const canMark = (s: AttendanceSession) => {
+    const ts = (s.team || 'ALL').split(',').map((t) => t.trim().toUpperCase());
+    return ts.includes('ALL') || ts.includes(teamName.toUpperCase());
+  };
 
   /** Parse a JSON body safely and turn error responses into a readable message. */
   const readJson = async (res: Response) => {
@@ -788,6 +797,36 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
     // Optimistic UI update
     setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, records: updatedRecords } : s));
+
+    // Admin-created meetings (ALL / multi-team): the team only sees and may change its own
+    // members' marks, so save each member separately (a few at a time) instead of the whole map.
+    if (!canManage(activeSession)) {
+      const sessionId = activeSession.id;
+      const failed: string[] = [];
+      for (let i = 0; i < targets.length; i += 6) {
+        await Promise.all(targets.slice(i, i + 6).map(async (m) => {
+          try {
+            const res = await fetch(`/api/sessions/${sessionId}/records/${m.id}`, {
+              method: 'PUT',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ status }),
+            });
+            if (!res.ok) throw new Error(errorText(await readJson(res), res.status));
+          } catch {
+            failed.push(m.id);
+          }
+        }));
+      }
+      // put back the previous mark for anyone that didn't save
+      failed.forEach((id) => setLocalRecord(sessionId, id, previousSession.records?.[id]));
+      if (failed.length === 0) {
+        flash('success', `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} ${status.toLowerCase()}`);
+      } else {
+        flash('error', `Saved ${targets.length - failed.length} of ${targets.length}; ${failed.length} could not be saved. Try again.`);
+      }
+      setBulkMarking(false);
+      return;
+    }
 
     try {
       const res = await fetch(`/api/sessions/${activeSession.id}`, {
@@ -1931,8 +1970,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                             <th className="hidden sm:table-cell px-6 py-3 text-slate-400 uppercase tracking-wider">Role</th>
                             <th className="px-3 sm:px-6 py-3 text-slate-400 uppercase tracking-wider">
                               <div className="flex flex-col sm:flex-row items-end sm:items-center justify-center gap-2 sm:gap-4">
-                                <span className={canManage(activeSession) ? 'hidden md:inline' : ''}>{canManage(activeSession) ? 'Mark Attendance' : 'Status'}</span>
-                                {canManage(activeSession) && (
+                                <span className={canMark(activeSession) ? 'hidden md:inline' : ''}>{canMark(activeSession) ? 'Mark Attendance' : 'Status'}</span>
+                                {canMark(activeSession) && (
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => handleBulkMark('PRESENT')}
@@ -1970,7 +2009,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                 </td>
                                 <td className="px-3 sm:px-6 py-3 whitespace-nowrap">
                                   <div className="flex items-center justify-end sm:justify-center gap-1.5 sm:gap-2">
-                                    {canManage(activeSession) ? (
+                                    {canMark(activeSession) ? (
                                       <>
                                         <button
                                           onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? 'ABSENT' : 'PRESENT')}
