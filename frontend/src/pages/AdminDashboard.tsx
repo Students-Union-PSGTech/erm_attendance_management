@@ -1289,15 +1289,18 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                     ) : (
                       <div className="space-y-2">
                         {selectedMemberHistory.history.map((h, i) => {
-                          const isPresent = h.status === 'PRESENT';
                           return (
                             <div key={i} className="p-3 rounded-md border border-white/[0.06] hover:bg-white/[0.03] flex items-center justify-between text-xs transition-colors">
                               <div>
                                 <p className="font-semibold text-slate-200">{h.title}</p>
                                 <p className="text-[11px] text-slate-400 mt-0.5">{h.date} • Slot: {h.sessionSlot || 'FN'}</p>
                               </div>
-                              <span className={`badge-rect ${isPresent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'}`}>
-                                {isPresent ? 'Present' : 'Absent'}
+                              <span className={`badge-rect ${
+                                h.status === 'PRESENT' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
+                                h.status === 'INFORMED' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' :
+                                'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                              }`}>
+                                {h.status === 'PRESENT' ? 'Present' : h.status === 'INFORMED' ? 'Informed' : 'Absent'}
                               </span>
                             </div>
                           );

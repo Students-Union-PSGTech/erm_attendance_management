@@ -116,16 +116,15 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     setBulkError(null);
   }, [activeSession?.id]);
 
-  const handleMarkAttendance = async (memberId: string, currentStatus: string) => {
+  const handleMarkAttendance = async (memberId: string, targetStatus: string) => {
     if (!activeSession || isUpcoming(activeSession) || sessionPermissionMode === 'view') return;
 
-    // Toggle: if currently PRESENT, unmark back to neutral via DELETE endpoint
-    // If not PRESENT, mark PRESENT via PUT endpoint
-    const willBePresent = currentStatus !== 'PRESENT';
+    const currentStatus = activeSession.records[memberId]?.status;
+    const willUnmark = currentStatus === targetStatus;
     const updatedRecords = { ...activeSession.records };
 
-    if (willBePresent) {
-      updatedRecords[memberId] = { status: 'PRESENT', markedAt: new Date().toISOString() };
+    if (!willUnmark) {
+      updatedRecords[memberId] = { status: targetStatus, markedAt: new Date().toISOString() };
     } else {
       delete updatedRecords[memberId];
     }
@@ -134,14 +133,14 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, records: updatedRecords } : s));
 
     try {
-      if (willBePresent) {
+      if (!willUnmark) {
         await fetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${localStorage.getItem('token')}`
           },
-          body: JSON.stringify({ status: 'PRESENT' })
+          body: JSON.stringify({ status: targetStatus })
         });
       } else {
         await fetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
@@ -193,9 +192,15 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     }
   };
 
-  const handleBulkMark = async (action: 'PRESENT' | 'CLEAR', list: Member[], label: string) => {
+  const handleBulkMark = async (action: 'PRESENT' | 'ABSENT' | 'INFORMED' | 'CLEAR' | 'UNMARKED_TO_ABSENT', list: Member[], label: string) => {
     if (!activeSession || list.length === 0 || isUpcoming(activeSession) || sessionPermissionMode === 'view') return;
-    if (list.length > 60 && !window.confirm(action === 'PRESENT' ? `Mark all ${list.length} members of ${label} present?` : `Reset all ${list.length} members of ${label} to unmarked?`)) return;
+    
+    let confirmMsg = '';
+    if (action === 'CLEAR') confirmMsg = `Reset all ${list.length} members of ${label} to unmarked?`;
+    else if (action === 'UNMARKED_TO_ABSENT') confirmMsg = `Mark all currently unmarked members of ${label} as absent?`;
+    else confirmMsg = `Mark all ${list.length} members of ${label} as ${action.toLowerCase()}?`;
+    
+    if (list.length > 60 && !window.confirm(confirmMsg)) return;
     setBulkBusy(action);
     setBulkError(null);
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` };
@@ -207,8 +212,14 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
       const now = new Date().toISOString();
       const records: AttendanceSession['records'] = {};
       Object.entries(base).forEach(([id, r]) => { if (known.has(id)) records[id] = r; });
-      if (action === 'PRESENT') {
-        list.forEach(m => { records[m.id] = { status: 'PRESENT', markedAt: now }; });
+      if (action === 'UNMARKED_TO_ABSENT') {
+        list.forEach(m => {
+          if (!records[m.id]?.status) {
+            records[m.id] = { status: 'ABSENT', markedAt: now };
+          }
+        });
+      } else if (action !== 'CLEAR') {
+        list.forEach(m => { records[m.id] = { status: action, markedAt: now }; });
       } else {
         // Reset to neutral / unmarked
         list.forEach(m => { delete records[m.id]; });
@@ -604,12 +615,36 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     {bulkBusy === 'PRESENT' ? 'Saving…' : <>All Present<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
                   </button>
                   <button
+                    onClick={() => handleBulkMark('ABSENT', scope, label)}
+                    disabled={!!bulkBusy || scope.length === 0 || upcoming}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {bulkBusy === 'ABSENT' ? 'Saving…' : <>All Absent<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
+                  </button>
+                  <button
+                    onClick={() => handleBulkMark('INFORMED', scope, label)}
+                    disabled={!!bulkBusy || scope.length === 0 || upcoming}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {bulkBusy === 'INFORMED' ? 'Saving…' : <>All Informed<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
+                  </button>
+                  <button
                     onClick={() => handleBulkMark('CLEAR', scope, label)}
                     disabled={!!bulkBusy || scope.length === 0 || upcoming}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                     {bulkBusy === 'CLEAR' ? 'Saving…' : <>Reset to Unmarked<span className="hidden sm:inline">&nbsp;({scope.length})</span></>}
+                  </button>
+                  <button
+                    onClick={() => handleBulkMark('UNMARKED_TO_ABSENT', scope, label)}
+                    disabled={!!bulkBusy || scope.length === 0 || upcoming}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {bulkBusy === 'UNMARKED_TO_ABSENT' ? 'Saving…' : <>Mark Unmarked as Absent</>}
                   </button>
                 </>
               ) : (
@@ -664,7 +699,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     )}
                 {group.rows.map(member => {
                   const record = activeSession.records[member.id];
-                  const isPresent = record?.status === 'PRESENT';
+                  const status = record?.status;
 
                   return (
                     <tr
@@ -684,31 +719,59 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                       <td className="px-4 sm:px-6 py-3 text-right">
                         <div className="inline-flex items-center justify-end gap-2">
                           {/* Neutral / Marked Status Badge */}
-                          <span className={`px-2.5 py-1 rounded text-[11px] font-bold uppercase tracking-wider font-mono ${
-                            upcoming
-                              ? 'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'
-                              : isPresent
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-white/5 text-slate-400 border border-white/10'
-                          }`}>
-                            {upcoming ? 'Upcoming' : isPresent ? 'Present' : 'Unmarked'}
-                          </span>
+                          {(upcoming || sessionPermissionMode === 'view') && (
+                            <span className={`px-2.5 py-1 rounded text-[11px] font-bold uppercase tracking-wider font-mono ${
+                              upcoming
+                                ? 'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'
+                                : status === 'PRESENT'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : status === 'ABSENT'
+                                ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                : status === 'INFORMED'
+                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                : 'bg-white/5 text-slate-400 border border-white/10'
+                            }`}>
+                              {upcoming ? 'Upcoming' : status ? status : 'Unmarked'}
+                            </span>
+                          )}
 
-                          {/* Action Button: only visible and clickable in Edit mode */}
-                          {sessionPermissionMode === 'edit' && (
-                            <button
-                              onClick={() => handleMarkAttendance(member.id, isPresent ? 'PRESENT' : 'UNMARKED')}
-                              disabled={upcoming}
-                              title={upcoming ? 'Opens when the meeting starts' : isPresent ? 'Click to unmark' : 'Click to mark Present'}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                                isPresent
-                                  ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-600'
-                                  : 'border border-white/10 bg-white/5 text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/40'
-                              }`}
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>{isPresent ? 'Marked' : 'Mark Present'}</span>
-                            </button>
+                          {/* Action Button Group: only visible and clickable in Edit mode */}
+                          {sessionPermissionMode === 'edit' && !upcoming && (
+                            <div className="flex bg-[#0A1628] rounded border border-white/10 overflow-hidden">
+                              <button
+                                onClick={() => handleMarkAttendance(member.id, 'PRESENT')}
+                                className={`px-2.5 py-1.5 text-[11px] font-bold uppercase transition-all cursor-pointer ${
+                                  status === 'PRESENT'
+                                    ? 'bg-emerald-500 text-white'
+                                    : 'text-slate-400 hover:bg-white/5 hover:text-emerald-400'
+                                }`}
+                                title="Mark Present"
+                              >
+                                Pre
+                              </button>
+                              <button
+                                onClick={() => handleMarkAttendance(member.id, 'ABSENT')}
+                                className={`px-2.5 py-1.5 text-[11px] font-bold uppercase transition-all cursor-pointer border-l border-white/10 ${
+                                  status === 'ABSENT'
+                                    ? 'bg-rose-500 text-white'
+                                    : 'text-slate-400 hover:bg-white/5 hover:text-rose-400'
+                                }`}
+                                title="Mark Absent"
+                              >
+                                Abs
+                              </button>
+                              <button
+                                onClick={() => handleMarkAttendance(member.id, 'INFORMED')}
+                                className={`px-2.5 py-1.5 text-[11px] font-bold uppercase transition-all cursor-pointer border-l border-white/10 ${
+                                  status === 'INFORMED'
+                                    ? 'bg-amber-500 text-white'
+                                    : 'text-slate-400 hover:bg-white/5 hover:text-amber-400'
+                                }`}
+                                title="Mark Informed"
+                              >
+                                Inf
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -992,7 +1055,14 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                   <label className="block font-semibold text-slate-300 mb-1">Slot</label>
                   <select
                     value={createForm.sessionSlot}
-                    onChange={(e) => setCreateForm({ ...createForm, sessionSlot: e.target.value })}
+                    onChange={(e) => {
+                      const newSlot = e.target.value;
+                      let newTime = createForm.startTime;
+                      if (newSlot === 'FN') newTime = '09:00';
+                      else if (newSlot === 'AN') newTime = '12:50';
+                      else if (newSlot === 'EV') newTime = '17:30';
+                      setCreateForm({ ...createForm, sessionSlot: newSlot, startTime: newTime });
+                    }}
                     className="rect-input w-full px-3 py-2 text-xs bg-[#0B172B] text-slate-200 cursor-pointer"
                   >
                     <option value="FN">FN (Forenoon / Morning)</option>
