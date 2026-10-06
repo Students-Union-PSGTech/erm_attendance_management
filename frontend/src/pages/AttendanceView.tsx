@@ -304,31 +304,32 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   };
 
   const handleDeleteSession = async () => {
-    if (!deletingSession) return;
-    setDeleteBusy(true);
-    setDeleteError(null);
-    try {
-      const res = await fetch(`/api/sessions/${deletingSession.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setDeleteError(data.error || 'Failed to delete the session');
-        return;
-      }
-      setSessions(prev => prev.filter(s => s.id !== deletingSession.id));
-      if (activeSession?.id === deletingSession.id) {
-        setActiveSession(null);
-      }
-      setDeletingSession(null);
-    } catch (err) {
-      console.error('Network error deleting session:', err);
-      setDeleteError('Network error, could not delete the session');
-    } finally {
-      setDeleteBusy(false);
+  if (!deletingSession) return;
+  setDeleteBusy(true);
+  setDeleteError(null);
+  try {
+    const res = await fetch(`/api/sessions/${deletingSession.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setDeleteError(data.error || `Failed to delete the session (${res.status})`);
+      return;
     }
-  };
+
+    const deletedId = deletingSession.id;
+    setSessions(prev => prev.filter(s => s.id !== deletedId));
+    if (activeSession?.id === deletedId) setActiveSession(null);
+    setDeletingSession(null);
+  } catch (err) {
+    console.error('Network error deleting session:', err);
+    setDeleteError('Network error, could not delete the session');
+  } finally {
+    setDeleteBusy(false);
+  }
+};
 
   const deleteDialog = deletingSession && (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
