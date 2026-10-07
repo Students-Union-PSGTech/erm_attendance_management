@@ -37,6 +37,8 @@ const targetsOf = (session: { team: string }, members: Member[]) => {
   return teams.includes('ALL') ? members : members.filter(m => teams.includes((m.team || '').toUpperCase()));
 };
 
+type StatusFilter = 'ALL' | 'PRESENT' | 'INFORMED' | 'ABSENT';
+
 interface AttendanceViewProps {
   members: Member[];
 }
@@ -50,6 +52,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   const [sessionSearchQuery, setSessionSearchQuery] = useState('');
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [detailTeam, setDetailTeam] = useState<string | null>(null); // vertical shown inside a session (null = first)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL'); // stat card filter inside a session
   const [sessionTeamFilter, setSessionTeamFilter] = useState('ALL_SESSIONS'); // vertical filter on the sessions list
   const [bulkBusy, setBulkBusy] = useState<string | null>(null); // status being bulk-saved
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -109,10 +112,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     fetchSessions();
   }, []);
 
-  // Opening a session starts on its first vertical with an empty search
+  // Opening a session starts on its first vertical with an empty search and no status filter
   useEffect(() => {
     setDetailTeam(null);
     setMemberSearchQuery('');
+    setStatusFilter('ALL');
     setBulkError(null);
   }, [activeSession?.id]);
 
@@ -375,9 +379,14 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     const upcoming = isUpcoming(activeSession);
     const statusOf = (id: string) => activeSession.records[id]?.status || 'UNMARKED';
 
-    // Header numbers are for the whole session
+    // Header numbers are for the whole session.
+    // Absent = everyone who is neither present nor informed (marked absent or still unmarked).
     const presentCount = allTargets.filter(m => statusOf(m.id) === 'PRESENT').length;
-    const absentCount = allTargets.length - presentCount;
+    const informedList = allTargets
+      .filter(m => statusOf(m.id) === 'INFORMED')
+      .sort((a, b) => byTeam(a.team, b.team) || byRoleThenName(a, b));
+    const informedCount = informedList.length;
+    const absentCount = allTargets.length - presentCount - informedCount;
     const totalCount = allTargets.length;
 
     // One card per vertical in this session
@@ -403,12 +412,26 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
         m.role.toLowerCase().includes(q)
       );
     }
+    // Stat card filter (Absent = marked absent + unmarked, so the list matches the Absent count)
+    if (statusFilter !== 'ALL') {
+      targetMembers = targetMembers.filter(m => {
+        const s = statusOf(m.id);
+        if (statusFilter === 'ABSENT') return s !== 'PRESENT' && s !== 'INFORMED';
+        return s === statusFilter;
+      });
+    }
     targetMembers = [...targetMembers].sort((a, b) => byTeam(a.team, b.team) || byRoleThenName(a, b));
 
     // In "All", rows are grouped under a bold header per vertical
     const memberGroups = currentTeam === 'ALL' && showTeamCards
       ? detailTeams.map(team => ({ team: team as string | null, rows: targetMembers.filter(m => m.team === team) })).filter(g => g.rows.length > 0)
       : [{ team: null as string | null, rows: targetMembers }];
+
+    const statCards = [
+      { key: 'PRESENT' as const, label: 'Present', value: presentCount, box: 'bg-emerald-500/15 border-emerald-500/30', labelCls: 'text-emerald-400', valCls: 'text-emerald-300', ring: 'ring-emerald-400' },
+      { key: 'INFORMED' as const, label: 'Informed', value: informedCount, box: 'bg-amber-500/15 border-amber-500/30', labelCls: 'text-amber-400', valCls: 'text-amber-300', ring: 'ring-amber-400' },
+      { key: 'ABSENT' as const, label: 'Absent', value: absentCount, box: 'bg-rose-500/15 border-rose-500/30', labelCls: 'text-rose-400', valCls: 'text-rose-300', ring: 'ring-rose-400' },
+    ];
 
     return (
       <div className="flex flex-col pb-6 animate-in fade-in duration-300">
@@ -484,7 +507,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                 <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight">{activeSession.title}</h2>
               </div>
 
-              <div className="flex gap-2 sm:gap-3 items-center shrink-0 ml-auto">
+              <div className="flex flex-wrap gap-2 sm:gap-3 items-center shrink-0 ml-auto">
                 <button
                   onClick={downloadSessionCSV}
                   title="Download CSV"
@@ -501,16 +524,44 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 )}
-                <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-md px-3 sm:px-4 py-2 text-center min-w-[70px]">
-                  <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-0.5">Present</p>
-                  <p className="text-2xl font-black text-emerald-300 leading-none">{upcoming ? '—' : presentCount}</p>
-                </div>
-                <div className="bg-rose-500/15 border border-rose-500/30 rounded-md px-3 sm:px-4 py-2 text-center min-w-[70px]">
-                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-0.5">Absent</p>
-                  <p className="text-2xl font-black text-rose-300 leading-none">{upcoming ? '—' : absentCount}</p>
-                </div>
+                {/* Stat cards: click one to filter the list below, click again to clear */}
+                {statCards.map(c => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => setStatusFilter(statusFilter === c.key ? 'ALL' : c.key)}
+                    title={`Show ${c.label.toLowerCase()} members`}
+                    className={`rounded-md border px-3 sm:px-4 py-2 text-center min-w-[70px] cursor-pointer transition-all hover:brightness-125 ${c.box} ${
+                      statusFilter === c.key ? `ring-2 ${c.ring}` : ''
+                    }`}
+                  >
+                    <p className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${c.labelCls}`}>{c.label}</p>
+                    <p className={`text-2xl font-black leading-none ${c.valCls}`}>{upcoming ? '—' : c.value}</p>
+                  </button>
+                ))}
               </div>
             </div>
+
+            {/* Who informed */}
+            {!upcoming && informedList.length > 0 && (
+              <div className="sm:ml-9 p-3 rounded-md bg-amber-500/5 border border-amber-500/20">
+                <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-2">
+                  Informed ({informedList.length})
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {informedList.map(m => (
+                    <span
+                      key={m.id}
+                      className="px-2 py-1 rounded-md text-[11px] text-amber-200 bg-amber-500/10 border border-amber-500/30"
+                    >
+                      {m.name}
+                      {showTeamCards && <span className="text-amber-400/70 font-mono"> · {m.team}</span>}
+                      {m.rollNo ? <span className="text-amber-400/70 font-mono"> · {m.rollNo}</span> : null}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Bottom Row: Remarks & Search */}
             <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 sm:ml-9">
@@ -681,7 +732,16 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
               <tbody className="divide-y divide-white/[0.04]">
                 {targetMembers.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-6 py-10 text-center text-slate-400">No members match this filter.</td>
+                    <td colSpan={4} className="px-6 py-10 text-center text-slate-400">
+                      {statusFilter === 'ALL'
+                        ? 'No members match this filter.'
+                        : `No ${statusFilter.toLowerCase()} members match this filter.`}
+                      {statusFilter !== 'ALL' && (
+                        <button onClick={() => setStatusFilter('ALL')} className="ml-2 text-sky-400 underline cursor-pointer">
+                          Show all
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 )}
                 {memberGroups.map(group => (
@@ -692,7 +752,11 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
                           <div className="flex items-center gap-3">
                             <span className="text-sm sm:text-base font-black text-white uppercase tracking-widest">{group.team}</span>
                             <span className="text-[11px] text-slate-400 font-mono">
-                              {group.rows.filter(m => statusOf(m.id) === 'PRESENT').length} / {group.rows.length} present
+                              {(() => {
+                                // Counts for the whole vertical, regardless of the active status filter
+                                const teamAll = allTargets.filter(m => m.team === group.team);
+                                return `${teamAll.filter(m => statusOf(m.id) === 'PRESENT').length} / ${teamAll.length} present`;
+                              })()}
                             </span>
                           </div>
                         </td>
