@@ -120,6 +120,9 @@ export interface MemberHistoryDetail {
   }>;
 }
 
+/** Bulk actions available in edit mode (same set as the admin view). */
+type BulkAction = 'PRESENT' | 'ABSENT' | 'INFORMED' | 'CLEAR' | 'UNMARKED_TO_ABSENT';
+
 const NAV: { icon: React.ElementType; label: NavKey }[] = [
   { icon: Grid3X3, label: 'Overview' },
   { icon: Users, label: 'Members' },
@@ -309,7 +312,13 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
   // Attendance marking
   const [markingIds, setMarkingIds] = useState<Set<string>>(new Set());
-  const [bulkMarking, setBulkMarking] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<BulkAction | null>(null); // action being bulk-saved
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'INFORMED' | 'UNMARKED'>('ALL');
+
+  // Each session opens showing everyone
+  useEffect(() => {
+    setStatusFilter('ALL');
+  }, [selectedSessionId]);
 
   // User login name
   const loginName = user.username;
@@ -470,34 +479,35 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     return sessions.find((s) => s.id === selectedSessionId) || null;
   }, [sessions, selectedSessionId]);
 
-  // Attendance breakdown for active session (Absent = Total - Present)
+  // Attendance breakdown for active session (Absent = Total - Present - Informed)
   const activeSessionStats = useMemo(() => {
     const total = members.length;
     if (!activeSession) {
-      return { present: 0, absent: total, total };
+      return { present: 0, informed: 0, absent: total, total };
     }
     const recs = activeSession.records || {};
     let present = 0;
+    let informed = 0;
 
     members.forEach((m) => {
       const rec = recs[m.id];
       if (rec?.status === 'PRESENT') present++;
+      else if (rec?.status === 'INFORMED') informed++;
     });
 
-    const absent = total - present;
-    return { present, absent, total };
+    // Absent = everyone who is neither present nor informed (marked absent or still unmarked)
+    const absent = total - present - informed;
+    return { present, informed, absent, total };
   }, [activeSession, members]);
 
-  // Members list with status for active session (initially neutral/UNMARKED)
+  // Members list with their real status for the active session (UNMARKED until marked)
   const sessionMembersList = useMemo(() => {
     if (!activeSession) return [];
     const records = activeSession.records || {};
 
-    let targetMembers = [...members].sort(byRoleThenName);
-
-    return targetMembers.map((m) => {
+    return [...members].sort(byRoleThenName).map((m) => {
       const rec = records[m.id];
-      const status: 'PRESENT' | 'UNMARKED' = rec?.status === 'PRESENT' ? 'PRESENT' : 'UNMARKED';
+      const status = (rec?.status || 'UNMARKED') as 'PRESENT' | 'ABSENT' | 'INFORMED' | 'UNMARKED';
       return {
         ...m,
         status,
@@ -506,6 +516,29 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       };
     });
   }, [activeSession, members]);
+
+  // Members shown in the session table, based on the clicked stat card
+  const filteredSessionMembers = useMemo(() => {
+    switch (statusFilter) {
+      case 'PRESENT':
+        return sessionMembersList.filter((m) => m.status === 'PRESENT');
+      case 'INFORMED':
+        return sessionMembersList.filter((m) => m.status === 'INFORMED');
+      case 'ABSENT':
+        // matches the Absent count: marked absent + still unmarked
+        return sessionMembersList.filter((m) => m.status === 'ABSENT' || m.status === 'UNMARKED');
+      case 'UNMARKED':
+        return sessionMembersList.filter((m) => m.status === 'UNMARKED');
+      default:
+        return sessionMembersList;
+    }
+  }, [sessionMembersList, statusFilter]);
+
+  // Everyone who informed in the open session
+  const informedMembers = useMemo(
+    () => sessionMembersList.filter((m) => m.status === 'INFORMED'),
+    [sessionMembersList],
+  );
 
   // Member History Handler
   const handleOpenHistory = async (member: Member) => {
@@ -797,78 +830,73 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     }
   };
 
-  /** Bulk mark all members in the current view ('PRESENT' or 'CLEAR'). */
-  const handleBulkMark = async (action: 'PRESENT' | 'CLEAR') => {
+  /**
+   * Bulk mark this team's members in the open session.
+   * Always saves member by member (a few at a time), so only this team's marks are ever
+   * written, even in admin-created ALL / multi-team meetings.
+   */
+  const handleBulkMark = async (action: BulkAction) => {
     if (!activeSession || isUpcoming(activeSession) || sessionPermissionMode === 'view') return;
-    const targets = sessionMembersList;
-    if (targets.length === 0) return;
+    if (!canMark(activeSession)) return;
 
-    setBulkMarking(true);
-
-    const now = new Date().toISOString();
-    const updatedRecords = { ...(activeSession.records || {}) };
-    if (action === 'PRESENT') {
-      targets.forEach(m => {
-        updatedRecords[m.id] = { status: 'PRESENT', markedAt: now };
-      });
-    } else {
-      targets.forEach(m => {
-        delete updatedRecords[m.id];
-      });
-    }
-
-    const previousSession = { ...activeSession };
-
-    // Optimistic UI update
-    setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, records: updatedRecords } : s));
-
-    // Admin-created meetings (ALL / multi-team): the team only sees and may change its own
-    // members' marks, so save each member separately (a few at a time) instead of the whole map.
-    if (!canManage(activeSession)) {
-      const sessionId = activeSession.id;
-      const failed: string[] = [];
-      for (let i = 0; i < targets.length; i += 6) {
-        await Promise.all(targets.slice(i, i + 6).map(async (m) => {
-          try {
-            const res = await fetch(`/api/sessions/${sessionId}/records/${m.id}`, {
-              method: action === 'PRESENT' ? 'PUT' : 'DELETE',
-              headers: getAuthHeaders(),
-              ...(action === 'PRESENT' && { body: JSON.stringify({ status: 'PRESENT' }) }),
-            });
-            if (!res.ok) throw new Error(errorText(await readJson(res), res.status));
-          } catch {
-            failed.push(m.id);
-          }
-        }));
-      }
-      // put back the previous mark for anyone that didn't save
-      failed.forEach((id) => setLocalRecord(sessionId, id, previousSession.records?.[id]));
-      if (failed.length === 0) {
-        flash('success', action === 'PRESENT' ? `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} present` : `Reset ${targets.length} member${targets.length === 1 ? '' : 's'} to unmarked`);
-      } else {
-        flash('error', `Saved ${targets.length - failed.length} of ${targets.length}; ${failed.length} could not be saved. Try again.`);
-      }
-      setBulkMarking(false);
+    const targets =
+      action === 'UNMARKED_TO_ABSENT'
+        ? sessionMembersList.filter((m) => m.status === 'UNMARKED')
+        : sessionMembersList;
+    if (targets.length === 0) {
+      flash('error', action === 'UNMARKED_TO_ABSENT' ? 'No unmarked members' : 'No members to update');
       return;
     }
 
+    const isClear = action === 'CLEAR';
+    const newStatus: SessionRecord['status'] | null = isClear
+      ? null
+      : action === 'UNMARKED_TO_ABSENT'
+      ? 'ABSENT'
+      : action;
+    const n = targets.length;
+    const plural = n === 1 ? '' : 's';
+    const doneMsg = isClear
+      ? `Reset ${n} member${plural} to unmarked`
+      : `Marked ${n} member${plural} ${newStatus!.toLowerCase()}`;
+
+    setBulkBusy(action);
+
+    const sessionId = activeSession.id;
+    const previousRecords = { ...(activeSession.records || {}) };
+    const now = new Date().toISOString();
+
+    // Optimistic UI update
+    targets.forEach((m) => {
+      setLocalRecord(sessionId, m.id, newStatus ? { status: newStatus, markedAt: now } : undefined);
+    });
+
+    const failed: string[] = [];
     try {
-      const res = await fetch(`/api/sessions/${activeSession.id}`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ records: updatedRecords })
-      });
+      for (let i = 0; i < targets.length; i += 6) {
+        await Promise.all(
+          targets.slice(i, i + 6).map(async (m) => {
+            try {
+              const res = await fetch(`/api/sessions/${sessionId}/records/${m.id}`, {
+                method: newStatus ? 'PUT' : 'DELETE',
+                headers: getAuthHeaders(),
+                ...(newStatus && { body: JSON.stringify({ status: newStatus }) }),
+              });
+              if (!res.ok) throw new Error(errorText(await readJson(res), res.status));
+            } catch {
+              failed.push(m.id);
+            }
+          }),
+        );
+      }
 
-      if (!res.ok) throw new Error(`Bulk mark failed (${res.status})`);
+      // Put back the previous mark for anyone that didn't save
+      failed.forEach((id) => setLocalRecord(sessionId, id, previousRecords[id]));
 
-      flash('success', action === 'PRESENT' ? `Marked ${targets.length} member${targets.length === 1 ? '' : 's'} present` : `Reset ${targets.length} member${targets.length === 1 ? '' : 's'} to unmarked`);
-    } catch (err: any) {
-      console.error(err);
-      // Revert optimistic
-      setSessions(prev => prev.map(s => s.id === activeSession.id ? previousSession : s));
-      flash('error', err.message || 'Could not save bulk attendance');
+      if (failed.length === 0) flash('success', doneMsg);
+      else flash('error', `Saved ${n - failed.length} of ${n}; ${failed.length} could not be saved. Try again.`);
     } finally {
-      setBulkMarking(false);
+      setBulkBusy(null);
     }
   };
 
@@ -2019,36 +2047,57 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       )}
                     </div>
 
-                    {/* Selected Session Stats Banner */}
+                    {/* Selected Session Stats Banner (click a card to filter the table) */}
                     {activeSession && (
-                      <div className="pt-4 grid grid-cols-3 gap-3">
-                        <div className="p-3 rounded-md bg-white/[0.03] border border-white/10">
-                          <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide">
-                            Total Members
-                          </span>
-                          <div className="text-xl font-black text-white font-mono">
-                            {sessionMembersList.length}
-                          </div>
+                      <>
+                        <div className="pt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          {(
+                            [
+                              { key: 'ALL', label: 'Total Members', value: sessionMembersList.length, box: 'bg-white/[0.03] border-white/10', labelCls: 'text-slate-400', valCls: 'text-white', ring: 'ring-slate-400' },
+                              { key: 'PRESENT', label: 'Present', value: activeSessionStats.present, box: 'bg-emerald-950/40 border-emerald-500/30', labelCls: 'text-emerald-400', valCls: 'text-emerald-300', ring: 'ring-emerald-400' },
+                              { key: 'INFORMED', label: 'Informed', value: activeSessionStats.informed, box: 'bg-amber-950/40 border-amber-500/30', labelCls: 'text-amber-400', valCls: 'text-amber-300', ring: 'ring-amber-400' },
+                              { key: 'ABSENT', label: 'Absent', value: activeSessionStats.absent, box: 'bg-rose-950/40 border-rose-500/30', labelCls: 'text-rose-400', valCls: 'text-rose-300', ring: 'ring-rose-400' },
+                            ] as const
+                          ).map((c) => (
+                            <button
+                              key={c.key}
+                              type="button"
+                              onClick={() => setStatusFilter(statusFilter === c.key ? 'ALL' : c.key)}
+                              title={c.key === 'ALL' ? 'Show everyone' : `Show ${c.label.toLowerCase()} members`}
+                              className={`p-3 rounded-md border text-left cursor-pointer transition-all hover:brightness-125 ${c.box} ${
+                                statusFilter === c.key && c.key !== 'ALL' ? `ring-2 ${c.ring}` : ''
+                              }`}
+                            >
+                              <span className={`text-[10px] font-mono font-bold uppercase tracking-wide ${c.labelCls}`}>
+                                {c.label}
+                              </span>
+                              <div className={`text-xl font-black font-mono ${c.valCls}`}>
+                                {c.key !== 'ALL' && isUpcoming(activeSession) ? '—' : c.value}
+                              </div>
+                            </button>
+                          ))}
                         </div>
 
-                        <div className="p-3 rounded-md bg-emerald-950/40 border border-emerald-500/30">
-                          <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wide">
-                            Present
-                          </span>
-                          <div className="text-xl font-black text-emerald-300 font-mono">
-                            {isUpcoming(activeSession) ? '—' : activeSessionStats.present}
+                        {/* Who informed */}
+                        {!isUpcoming(activeSession) && informedMembers.length > 0 && (
+                          <div className="mt-3 p-3 rounded-md bg-amber-950/30 border border-amber-500/20">
+                            <p className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wide mb-2">
+                              Informed ({informedMembers.length})
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {informedMembers.map((m) => (
+                                <span
+                                  key={m.id}
+                                  className="px-2 py-1 rounded-sm text-[11px] font-mono text-amber-200 bg-amber-500/10 border border-amber-500/30"
+                                >
+                                  {m.name}
+                                  {m.rollNo ? <span className="text-amber-400/70"> · {m.rollNo}</span> : null}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-
-                        <div className="p-3 rounded-md bg-rose-950/40 border border-rose-500/30">
-                          <span className="text-[10px] font-mono font-bold text-rose-400 uppercase tracking-wide">
-                            Absent
-                          </span>
-                          <div className="text-xl font-black text-rose-300 font-mono">
-                            {isUpcoming(activeSession) ? '—' : activeSessionStats.absent}
-                          </div>
-                        </div>
-                      </div>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -2062,6 +2111,66 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                     </div>
                   )}
 
+                  {/* Bulk marking / actions */}
+                  <div className="rect-card px-4 py-3 mt-2 flex flex-wrap items-center gap-2 sm:gap-3">
+                    <p className="text-xs text-slate-300 mr-auto">
+                      <span className="font-bold text-white uppercase tracking-wider">{teamName}</span>
+                      <span className="text-slate-500 font-mono ml-2">
+                        {sessionMembersList.filter(m => m.status === 'PRESENT').length} / {sessionMembersList.length} present
+                      </span>
+                    </p>
+
+                    {sessionPermissionMode === 'edit' && canMark(activeSession) ? (
+                      <>
+                        <button
+                          onClick={() => handleBulkMark('PRESENT')}
+                          disabled={!!bulkBusy || sessionMembersList.length === 0 || isUpcoming(activeSession)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {bulkBusy === 'PRESENT' ? 'Saving…' : <>All Present<span className="hidden sm:inline">&nbsp;({sessionMembersList.length})</span></>}
+                        </button>
+                        <button
+                          onClick={() => handleBulkMark('ABSENT')}
+                          disabled={!!bulkBusy || sessionMembersList.length === 0 || isUpcoming(activeSession)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {bulkBusy === 'ABSENT' ? 'Saving…' : <>All Absent<span className="hidden sm:inline">&nbsp;({sessionMembersList.length})</span></>}
+                        </button>
+                        <button
+                          onClick={() => handleBulkMark('INFORMED')}
+                          disabled={!!bulkBusy || sessionMembersList.length === 0 || isUpcoming(activeSession)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {bulkBusy === 'INFORMED' ? 'Saving…' : <>All Informed<span className="hidden sm:inline">&nbsp;({sessionMembersList.length})</span></>}
+                        </button>
+                        <button
+                          onClick={() => handleBulkMark('CLEAR')}
+                          disabled={!!bulkBusy || sessionMembersList.length === 0 || isUpcoming(activeSession)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          {bulkBusy === 'CLEAR' ? 'Saving…' : <>Reset to Unmarked<span className="hidden sm:inline">&nbsp;({sessionMembersList.length})</span></>}
+                        </button>
+                        <button
+                          onClick={() => handleBulkMark('UNMARKED_TO_ABSENT')}
+                          disabled={!!bulkBusy || sessionMembersList.length === 0 || isUpcoming(activeSession)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500 hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {bulkBusy === 'UNMARKED_TO_ABSENT' ? 'Saving…' : <>Mark Unmarked as Absent</>}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs text-slate-400 font-mono italic flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-sky-400" />
+                        Read-only view · Bulk actions locked
+                      </span>
+                    )}
+                  </div>
+
                   {/* Session Members Attendance Table */}
                   <div className="rect-card-elevated overflow-hidden flex flex-col mt-2">
                     <div className="overflow-auto max-h-[calc(100dvh-120px)] min-h-[320px] p-0 custom-scrollbar">
@@ -2070,36 +2179,26 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                           <tr>
                             <th className="px-3 sm:px-6 py-3 text-slate-400 uppercase tracking-wider">Member</th>
                             <th className="hidden sm:table-cell px-6 py-3 text-slate-400 uppercase tracking-wider">Role</th>
-                            <th className="px-3 sm:px-6 py-3 text-slate-400 uppercase tracking-wider">
-                              <div className="flex flex-col sm:flex-row items-end sm:items-center justify-center gap-2 sm:gap-4">
-                                <span className={sessionPermissionMode === 'edit' && canMark(activeSession) ? 'hidden md:inline' : ''}>
-                                  {sessionPermissionMode === 'edit' && canMark(activeSession) ? 'Mark Attendance' : 'Status (Read-Only)'}
-                                </span>
-                                {sessionPermissionMode === 'edit' && canMark(activeSession) && (
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      onClick={() => handleBulkMark('PRESENT')}
-                                      disabled={bulkMarking || isUpcoming(activeSession)}
-                                      className="px-2.5 py-1 bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-400 border border-emerald-500/40 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
-                                    >
-                                      All Present
-                                    </button>
-                                    <button
-                                      onClick={() => handleBulkMark('CLEAR')}
-                                      disabled={bulkMarking || isUpcoming(activeSession)}
-                                      className="px-2.5 py-1 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-600 rounded-sm font-bold font-mono transition-colors disabled:opacity-50 cursor-pointer"
-                                    >
-                                      Reset to Unmarked
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
+                            <th className="px-3 sm:px-6 py-3 text-right text-slate-400 uppercase tracking-wider">
+                              {sessionPermissionMode === 'edit' && canMark(activeSession) ? 'Attendance Action' : 'Attendance Status'}
                             </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                          {sessionMembersList.map(m => {
+                          {filteredSessionMembers.length === 0 && (
+                            <tr>
+                              <td colSpan={3} className="px-6 py-10 text-center text-xs font-mono text-slate-500">
+                                No {statusFilter.toLowerCase()} members in this session.
+                                <button onClick={() => setStatusFilter('ALL')} className="ml-2 text-sky-400 underline cursor-pointer">
+                                  Show all
+                                </button>
+                              </td>
+                            </tr>
+                          )}
+                          {filteredSessionMembers.map(m => {
                             const status = m.status;
+                            const upcoming = isUpcoming(activeSession);
+                            const canEditRow = sessionPermissionMode === 'edit' && canMark(activeSession);
                             return (
                               <tr key={m.id} className="hover:bg-sky-950/20 transition-colors">
                                 <td className="px-3 sm:px-6 py-3 sm:whitespace-nowrap">
@@ -2111,30 +2210,65 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                                     {m.role}
                                   </span>
                                 </td>
-                                <td className="px-3 sm:px-6 py-3 whitespace-nowrap">
-                                  <div className="flex items-center justify-end sm:justify-center gap-1.5 sm:gap-2">
-                                    {sessionPermissionMode === 'edit' && canMark(activeSession) ? (
-                                      <button
-                                        onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? null : 'PRESENT')}
-                                        disabled={markingIds.has(m.id) || isUpcoming(activeSession)}
-                                        title={isUpcoming(activeSession) ? 'Opens when the meeting starts' : undefined}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                                          status === 'PRESENT'
-                                            ? 'bg-emerald-600 text-white shadow-[0_0_12px_rgba(16,185,129,0.5)] border border-emerald-400'
-                                            : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-950/40 border border-white/10'
-                                        }`}
-                                      >
-                                        <Check className="w-3.5 h-3.5" />
-                                        <span>{status === 'PRESENT' ? 'Present' : 'Mark Present'}</span>
-                                      </button>
-                                    ) : (
-                                      <span className={`px-3 py-1 rounded-sm text-xs font-bold font-mono uppercase ${
-                                        status === 'PRESENT'
-                                          ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40'
-                                          : 'bg-slate-900/60 text-slate-400 border border-slate-700/40'
+                                <td className="px-3 sm:px-6 py-3 whitespace-nowrap text-right">
+                                  <div className="inline-flex items-center justify-end gap-2">
+                                    {/* Status badge: view mode, upcoming, or no permission to mark */}
+                                    {(upcoming || !canEditRow) && (
+                                      <span className={`px-2.5 py-1 rounded text-[11px] font-bold uppercase tracking-wider font-mono ${
+                                        upcoming
+                                          ? 'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'
+                                          : status === 'PRESENT'
+                                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                          : status === 'ABSENT'
+                                          ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                          : status === 'INFORMED'
+                                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                          : 'bg-white/5 text-slate-400 border border-white/10'
                                       }`}>
-                                        {status === 'PRESENT' ? 'Present' : 'Unmarked'}
+                                        {upcoming ? 'Upcoming' : status === 'UNMARKED' ? 'Unmarked' : STATUS_STYLE[status].label}
                                       </span>
+                                    )}
+
+                                    {/* Pre / Abs / Inf buttons: edit mode only. Clicking the active one clears it. */}
+                                    {canEditRow && !upcoming && (
+                                      <div className="flex bg-[#0A1628] rounded border border-white/10 overflow-hidden">
+                                        <button
+                                          onClick={() => markMember(activeSession, m.id, status === 'PRESENT' ? null : 'PRESENT')}
+                                          disabled={markingIds.has(m.id)}
+                                          title="Mark Present"
+                                          className={`px-2.5 py-1.5 text-[11px] font-bold uppercase transition-all cursor-pointer disabled:opacity-40 ${
+                                            status === 'PRESENT'
+                                              ? 'bg-emerald-500 text-white'
+                                              : 'text-slate-400 hover:bg-white/5 hover:text-emerald-400'
+                                          }`}
+                                        >
+                                          Pre
+                                        </button>
+                                        <button
+                                          onClick={() => markMember(activeSession, m.id, status === 'ABSENT' ? null : 'ABSENT')}
+                                          disabled={markingIds.has(m.id)}
+                                          title="Mark Absent"
+                                          className={`px-2.5 py-1.5 text-[11px] font-bold uppercase transition-all cursor-pointer border-l border-white/10 disabled:opacity-40 ${
+                                            status === 'ABSENT'
+                                              ? 'bg-rose-500 text-white'
+                                              : 'text-slate-400 hover:bg-white/5 hover:text-rose-400'
+                                          }`}
+                                        >
+                                          Abs
+                                        </button>
+                                        <button
+                                          onClick={() => markMember(activeSession, m.id, status === 'INFORMED' ? null : 'INFORMED')}
+                                          disabled={markingIds.has(m.id)}
+                                          title="Mark Informed"
+                                          className={`px-2.5 py-1.5 text-[11px] font-bold uppercase transition-all cursor-pointer border-l border-white/10 disabled:opacity-40 ${
+                                            status === 'INFORMED'
+                                              ? 'bg-amber-500 text-white'
+                                              : 'text-slate-400 hover:bg-white/5 hover:text-amber-400'
+                                          }`}
+                                        >
+                                          Inf
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
                                 </td>

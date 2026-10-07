@@ -80,10 +80,12 @@ export async function memberSummary(team?: Team) {
  */
 export async function memberAttendanceStats(team?: Team, from?: string, to?: string) {
   const [members, sessions] = await Promise.all([
-    Member.find(team ? { team } : {}, { name: 1, team: 1, role: 1 }).sort({ name: 1 }).lean(),
+    // 1) extend the projection
+    Member.find(team ? { team } : {}, {
+      name: 1, team: 1, role: 1, rollNo: 1, department: 1, year: 1, phone: 1,
+    }).sort({ name: 1 }).lean(),
     AttendanceSession.find(sessionFilter(from, to), { team: 1, date: 1, startTime: 1, records: 1 }).lean(),
   ]);
-  // Upcoming meetings (not started yet) don't count
   const now = nowKey();
   const plain = sessions.filter((s) => hasStarted(s, now)).map((s) => ({ team: s.team as string, records: recordsToObject(s.records as RecordsMap) }));
 
@@ -96,11 +98,16 @@ export async function memberAttendanceStats(team?: Team, from?: string, to?: str
       total++;
       t[s.records[id]?.status ?? 'ABSENT']++;
     }
+    // 2) the return block you pasted goes here
     return {
       memberId: id,
       name: m.name,
       team: m.team,
       role: m.role,
+      rollNo: m.rollNo,
+      department: m.department,
+      year: m.year,
+      phone: m.phone,
       present: t.PRESENT,
       absent: t.ABSENT,
       informed: t.INFORMED,

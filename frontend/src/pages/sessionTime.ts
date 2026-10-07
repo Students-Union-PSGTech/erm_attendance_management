@@ -10,7 +10,20 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Current local time as "YYYY-MM-DD HH:mm" (sortable as a string). */
 export function nowKey(d = new Date()): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', // keep in sync with backend APP_TIMEZONE
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+      .formatToParts(d)
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.year}-${p.month}-${p.day} ${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
 }
 
 export const startKey = (s: Timed) => `${s.date} ${s.startTime || '00:00'}`;

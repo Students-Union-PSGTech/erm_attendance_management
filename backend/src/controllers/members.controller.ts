@@ -66,8 +66,9 @@ export async function createMember(req: Request, res: Response) {
   res.status(201).json({ member: member.toJSON() });
 }
 
-// PATCH /api/members/:id   (admin, FR-2.5)
+// PATCH /api/members/:id
 export async function updateMember(req: Request, res: Response) {
+  await findVisibleMember(req); // 404 if missing or outside the caller's team
   const id = idParamSchema.parse(req.params.id);
   const update = req.body as MemberUpdateInput;
   const member = await Member.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true });
@@ -75,8 +76,9 @@ export async function updateMember(req: Request, res: Response) {
   res.json({ member: member.toJSON() });
 }
 
-// DELETE /api/members/:id   (admin, FR-2.6 — confirmation happens in the UI)
+// DELETE /api/members/:id
 export async function deleteMember(req: Request, res: Response) {
+  await findVisibleMember(req);
   const id = idParamSchema.parse(req.params.id);
   const deleted = await Member.findByIdAndDelete(id);
   if (!deleted) throw notFound('Member not found');

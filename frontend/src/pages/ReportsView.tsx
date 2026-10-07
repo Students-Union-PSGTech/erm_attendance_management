@@ -10,6 +10,8 @@ import { isUpcoming, opensLabel } from './sessionTime';
 
 interface ReportsViewProps {
   members: Member[];
+  /** Set for team logins: only this team's data is shown and cross-team sections are hidden. */
+  team?: string;
 }
 
 type AttendanceStat = {
@@ -55,15 +57,14 @@ type MemberHistoryDetail = {
     absent: number;
     informed: number;
     presentPct: number;
-    absentPct: number;
-    informedPct: number;
   };
   history: Array<{
     sessionId: string;
     title: string;
     date: string;
     sessionSlot?: string;
-    status: 'PRESENT' | 'ABSENT' | 'INFORMED' | 'UNMARKED';
+    status: 'PRESENT' | 'ABSENT' | 'INFORMED';
+    marked?: boolean;
     markedAt?: string;
   }>;
 };
@@ -82,6 +83,12 @@ const teamRank = (team?: string) => {
 
 const byTeamRoleName = (a: { team?: string; role?: string; name?: string }, b: { team?: string; role?: string; name?: string }) =>
   teamRank(a.team) - teamRank(b.team) || (a.team || '').localeCompare(b.team || '') || roleRank(a.role) - roleRank(b.role) || (a.name || '').localeCompare(b.name || '');
+
+// Does a session (e.g. "ALL" or "TECH,DESIGN") apply to this team?
+const sessionHasTeam = (sessionTeam: string | undefined, team: string) => {
+  const t = (sessionTeam || 'ALL').split(',').map((x) => x.trim().toUpperCase());
+  return t.includes('ALL') || t.includes(team);
+};
 
 const ROLE_STYLE: Record<string, string> = {
   LEAD: 'bg-[#082F49] text-[#7DD3FC] border border-sky-500/40',
@@ -104,8 +111,7 @@ const avatarColor = (name: string) => {
 };
 
 /* ─────────────────────────────────────────────────────────
-   REACT BITS STYLE: SPOTLIGHT CARD
-   Interactive mouse-following radial glow card
+   SPOTLIGHT CARD
    ───────────────────────────────────────────────────────── */
 function SpotlightCard({
   children,
@@ -147,7 +153,7 @@ function SpotlightCard({
 }
 
 /* ─────────────────────────────────────────────────────────
-   ANIME.JS ANIMATED NUMBER COUNTER
+   ANIMATED NUMBER COUNTER
    ───────────────────────────────────────────────────────── */
 function AnimatedCounter({
   value,
@@ -185,14 +191,20 @@ function AnimatedCounter({
 /* ─────────────────────────────────────────────────────────
    MAIN REPORTS & ANALYTICS VIEW
    ───────────────────────────────────────────────────────── */
-export default function ReportsView({ members }: ReportsViewProps) {
+export default function ReportsView({ members, team }: ReportsViewProps) {
+  const rosterTeams = Array.from(new Set(members.map((m) => (m.team || '').toUpperCase()).filter(Boolean)));
+  const teamScope = team?.toUpperCase() ?? (rosterTeams.length === 1 ? rosterTeams[0] : undefined);
+  const isTeamView = !!teamScope;
+
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStat[]>([]);
   const [sessionStats, setSessionStats] = useState<SessionStat[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters & Tabs
   const [activeTab, setActiveTab] = useState<'analytics' | 'members' | 'sessions' | 'exports'>('analytics');
-  const [selectedVertical, setSelectedVertical] = useState<string>('ALL');
+  const [selectedVertical, setSelectedVertical] = useState<string>(teamScope ?? 'ALL');
+  // Domain highlighted in the Domain card; the Role card follows it
+  const [selectedDomain, setSelectedDomain] = useState<string>('ALL');
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [showDefaultersOnly, setShowDefaultersOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'pct_desc' | 'pct_asc' | 'name' | 'role'>('pct_desc');
@@ -209,8 +221,22 @@ export default function ReportsView({ members }: ReportsViewProps) {
     y: number;
   } | null>(null);
 
+  useEffect(() => {
+    setSelectedVertical(teamScope ?? 'ALL');
+  }, [teamScope]);
+
+  // For team logins show only the team (or ALL), never other teams' names
+  const sessionTeamLabel = (t: string) =>
+    isTeamView
+      ? t.split(',').map((x) => x.trim().toUpperCase()).includes('ALL')
+        ? 'ALL'
+        : teamScope
+      : t;
+
   // Fetch Stats Data
   useEffect(() => {
+    let cancelled = false;
+
     const fetchStats = async () => {
       setLoading(true);
       try {
@@ -219,67 +245,89 @@ export default function ReportsView({ members }: ReportsViewProps) {
           fetch('/api/stats/attendance', { headers }),
           fetch('/api/sessions', { headers }),
         ]);
+        if (cancelled) return;
 
         if (attRes.ok) {
           const attData = await attRes.json();
-          // Backend stats.service calculates: absent = total - present (informed is treated as absent)
-          setAttendanceStats([...(attData.members || [])].sort(byTeamRoleName));
+          if (cancelled) return;
+          // Informed is tracked on its own: absent = total - present - informed.
+          // Turnout % is still present / total, so informed does not count as present.
+          const rows: AttendanceStat[] = (attData.members || [])
+            .filter((m: AttendanceStat) => !teamScope || (m.team || '').toUpperCase() === teamScope)
+            .map((m: AttendanceStat) => {
+              const informed = m.informed || 0;
+              const absent = Math.max(0, m.total - m.present - informed);
+              return {
+                ...m,
+                absent,
+                informed,
+                absentPct: m.total ? Math.round((absent / m.total) * 1000) / 10 : 0,
+                informedPct: m.total ? Math.round((informed / m.total) * 1000) / 10 : 0,
+              };
+            });
+          setAttendanceStats(rows.sort(byTeamRoleName));
         }
 
         if (sessionsRes.ok) {
           const sessionsData = await sessionsRes.json();
-          const computedStats = (sessionsData.sessions || []).map((s: any) => {
-            const teams = (s.team || 'ALL').split(',').map((t: string) => t.trim().toUpperCase());
-            const targetMembers = teams.includes('ALL')
-              ? members
-              : members.filter((m: any) => teams.includes(m.team?.toUpperCase() || ''));
+          if (cancelled) return;
+          const computedStats = (sessionsData.sessions || [])
+            .filter((s: any) => !teamScope || sessionHasTeam(s.team, teamScope))
+            .map((s: any) => {
+              const teams = (s.team || 'ALL').split(',').map((t: string) => t.trim().toUpperCase());
+              const targetMembers = teams.includes('ALL')
+                ? members
+                : members.filter((m: any) => teams.includes(m.team?.toUpperCase() || ''));
 
-            const records = s.records || {};
-            let present = 0;
-            let marked = 0;
+              const records = s.records || {};
+              let present = 0;
+              let informed = 0;
+              let marked = 0;
+              targetMembers.forEach((m: any) => {
+                const status = records[m.id]?.status;
+                if (status) marked++;
+                if (status === 'PRESENT') present++;
+                else if (status === 'INFORMED') informed++;
+              });
 
-            targetMembers.forEach((m: any) => {
-              const status = records[m.id]?.status;
-              if (status) marked++;
-              if (status === 'PRESENT') present++;
+              const targetCount = targetMembers.length;
+              // Absent = marked absent + still unmarked (everyone who is neither present nor informed)
+              const absent = Math.max(0, targetCount - present - informed);
+              const presentPct = targetCount ? Math.round((present / targetCount) * 1000) / 10 : 0;
+
+              return {
+                id: s.id,
+                date: s.date,
+                title: s.title,
+                team: s.team || 'ALL',
+                present,
+                absent,
+                informed,
+                marked,
+                targetCount,
+                presentPct,
+                startTime: s.startTime,
+                sessionSlot: s.sessionSlot,
+                notes: s.notes,
+                upcoming: isUpcoming(s),
+              };
             });
 
-            const targetCount = targetMembers.length;
-            // Rule: Absent = Total Members - Present Members (treating informed as absent)
-            const absent = Math.max(0, targetCount - present);
-            const presentPct = targetCount ? Math.round((present / targetCount) * 1000) / 10 : 0;
-
-            return {
-              id: s.id,
-              date: s.date,
-              title: s.title,
-              team: s.team || 'ALL',
-              present,
-              absent,
-              informed: 0,
-              marked,
-              targetCount,
-              presentPct,
-              startTime: s.startTime,
-              sessionSlot: s.sessionSlot,
-              notes: s.notes,
-              upcoming: isUpcoming(s),
-            };
-          });
-
-          // Sort sessions chronologically for trend chart
           computedStats.sort((a: SessionStat, b: SessionStat) => a.date.localeCompare(b.date));
           setSessionStats(computedStats);
         }
       } catch (err) {
         console.error('Failed to fetch analytics:', err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchStats();
-  }, [members]);
+    return () => {
+      cancelled = true;
+    };
+  }, [members, teamScope]);
 
   // Open member attendance history in View Mode (Read-Only)
   const handleOpenMemberView = async (member: Member) => {
@@ -288,10 +336,19 @@ export default function ReportsView({ members }: ReportsViewProps) {
     setMemberHistory(null);
     try {
       const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
-      const res = await fetch(`/api/members/${member.id}/history`, { headers });
+      const res = await fetch(`/api/members/${member.id}/attendance`, { headers });
       if (res.ok) {
         const data = await res.json();
-        setMemberHistory(data);
+        const { total, present } = data.stats;
+        const informed = (data.history || []).filter((h: any) => h.status === 'INFORMED').length;
+        setMemberHistory({
+          ...data,
+          stats: {
+            ...data.stats,
+            informed,
+            absent: Math.max(0, total - present - informed),
+          },
+        });
       }
     } catch (err) {
       console.error('Failed to load member history:', err);
@@ -331,44 +388,90 @@ export default function ReportsView({ members }: ReportsViewProps) {
     };
   }, [activeMembers, sessionStats]);
 
-  // Vertical benchmark comparison
-  const verticalBenchmarks = useMemo(() => {
-    return TEAM_ORDER.map((team) => {
-      const teamMembers = activeMembers.filter((m) => m.team.toUpperCase() === team);
-      const teamTotal = teamMembers.reduce((sum, m) => sum + m.total, 0);
-      const teamPresent = teamMembers.reduce((sum, m) => sum + m.present, 0);
-      // Absent = Total - Present
-      const teamAbsent = Math.max(0, teamTotal - teamPresent);
-      const avgPct = teamTotal > 0 ? Math.round((teamPresent / teamTotal) * 1000) / 10 : 0;
-      const defaulters = teamMembers.filter((m) => m.presentPct < 75).length;
+  // Domain & role breakdown: meetings held per vertical, expected = meetings x members
+  const domainBreakdown = useMemo(() => {
+    const held = sessionStats.filter((s) => !s.upcoming);
+    const round1 = (n: number) => Math.round(n * 10) / 10;
 
+    const build = (label: string, list: AttendanceStat[], meetings: number) => {
+      const present = list.reduce((s, m) => s + m.present, 0);
+      const informed = list.reduce((s, m) => s + m.informed, 0);
+      const expected = meetings * list.length;
       return {
-        team,
-        memberCount: teamMembers.length,
-        present: teamPresent,
-        absent: teamAbsent,
-        avgPct,
-        defaulters,
-      };
-    });
-  }, [activeMembers]);
-
-  // Role comparison
-  const roleBenchmarks = useMemo(() => {
-    return ROLE_ORDER.map((role) => {
-      const roleMembers = activeMembers.filter((m) => m.role.toUpperCase() === role);
-      const total = roleMembers.reduce((sum, m) => sum + m.total, 0);
-      const present = roleMembers.reduce((sum, m) => sum + m.present, 0);
-      const avgPct = total > 0 ? Math.round((present / total) * 1000) / 10 : 0;
-      return {
-        role,
-        memberCount: roleMembers.length,
-        avgPct,
+        label,
+        meetings,
+        memberCount: list.length,
+        expected,
         present,
-        absent: Math.max(0, total - present),
+        informed,
+        absent: Math.max(0, expected - present - informed),
+        pct: expected > 0 ? round1((present / expected) * 100) : 0,
       };
+    };
+
+    const extraTeams = Array.from(
+      new Set(attendanceStats.map((m) => m.team.toUpperCase()).filter((t) => !TEAM_ORDER.includes(t))),
+    );
+    const teams = isTeamView ? [teamScope!] : [...TEAM_ORDER, ...extraTeams];
+
+    return teams.map((t) => {
+      const list = attendanceStats.filter((m) => m.team.toUpperCase() === t);
+      const meetings = held.filter((s) => sessionHasTeam(s.team, t)).length;
+
+      const roles = ROLE_ORDER.map((r) =>
+        build(r, list.filter((m) => m.role.toUpperCase() === r), meetings),
+      );
+      const otherRoles = list.filter((m) => !ROLE_ORDER.includes(m.role.toUpperCase()));
+      if (otherRoles.length) roles.push(build('OTHER', otherRoles, meetings));
+
+      return { ...build(t, list, meetings), roles: roles.filter((r) => r.memberCount > 0) };
     });
-  }, [activeMembers]);
+  }, [attendanceStats, sessionStats, isTeamView, teamScope]);
+
+  // "All domains" summary row + role totals across domains
+  const allDomains = useMemo(() => {
+    const sum = (k: 'expected' | 'present' | 'informed' | 'memberCount') =>
+      domainBreakdown.reduce((s, d) => s + d[k], 0);
+    const expected = sum('expected');
+    const present = sum('present');
+    const informed = sum('informed');
+    const roleMap = new Map<string, { label: string; meetings: number; memberCount: number; expected: number; present: number; informed: number; absent: number; pct: number }>();
+    domainBreakdown.forEach((d) =>
+      d.roles.forEach((r) => {
+        const cur = roleMap.get(r.label) ?? { label: r.label, meetings: 0, memberCount: 0, expected: 0, present: 0, informed: 0, absent: 0, pct: 0 };
+        cur.memberCount += r.memberCount;
+        cur.expected += r.expected;
+        cur.present += r.present;
+        cur.informed += r.informed;
+        roleMap.set(r.label, cur);
+      }),
+    );
+    const roles = [...ROLE_ORDER, 'OTHER']
+      .map((l) => roleMap.get(l))
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map((r) => ({
+        ...r,
+        absent: Math.max(0, r.expected - r.present - r.informed),
+        pct: r.expected > 0 ? Math.round((r.present / r.expected) * 1000) / 10 : 0,
+      }));
+    return {
+      label: 'ALL',
+      meetings: sessionStats.filter((x) => !x.upcoming).length, // distinct held meetings
+      memberCount: sum('memberCount'),
+      expected,
+      present,
+      informed,
+      absent: Math.max(0, expected - present - informed),
+      pct: expected > 0 ? Math.round((present / expected) * 1000) / 10 : 0,
+      roles,
+    };
+  }, [domainBreakdown, sessionStats]);
+
+  const activeDomain = isTeamView ? teamScope! : selectedDomain;
+  const activeDetail =
+    activeDomain === 'ALL' ? allDomains : domainBreakdown.find((d) => d.label === activeDomain) ?? allDomains;
+  const activeRoles = activeDetail.roles;
+
 
   // Filtered member matrix
   const filteredMembers = useMemo(() => {
@@ -376,7 +479,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
     return attendanceStats
       .filter((m) => {
         if (selectedVertical !== 'ALL' && m.team.toUpperCase() !== selectedVertical) return false;
-        if (showDefaultersOnly && m.presentPct >= 75) return false;
+        if (showDefaultersOnly && (m.total === 0 || m.presentPct >= 75)) return false;
         if (q) {
           const matchName = m.name.toLowerCase().includes(q);
           const matchRole = m.role.toLowerCase().includes(q);
@@ -427,13 +530,14 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
   const downloadAttendanceCSV = () => {
     if (!attendanceStats.length) return;
-    const headers = ['Name', 'Team', 'Role', 'Total Meetings', 'Present', 'Absent', 'Turnout %'];
+    const headers = ['Name', 'Team', 'Role', 'Total Meetings', 'Present', 'Informed', 'Absent', 'Turnout %'];
     const data = attendanceStats.map((s) => [
       `"${s.name || ''}"`,
       `"${s.team || ''}"`,
       `"${s.role || ''}"`,
       s.total,
       s.present,
+      s.informed,
       s.absent,
       `"${s.presentPct}%"`,
     ]);
@@ -441,15 +545,17 @@ export default function ReportsView({ members }: ReportsViewProps) {
   };
 
   const downloadSessionsCSV = () => {
-    if (!sessionStats.length) return;
-    const headers = ['Date', 'Title', 'Team / Domain', 'Slot', 'Target Count', 'Present', 'Absent', 'Attendance %'];
-    const data = sessionStats.map((s) => [
+    const held = sessionStats.filter((s) => !s.upcoming);
+    if (!held.length) return;
+    const headers = ['Date', 'Title', 'Team / Domain', 'Slot', 'Target Count', 'Present', 'Informed', 'Absent', 'Attendance %'];
+    const data = held.map((s) => [
       `"${s.date}"`,
       `"${s.title}"`,
-      `"${s.team}"`,
+      `"${sessionTeamLabel(s.team)}"`,
       `"${s.sessionSlot || 'FN'}"`,
       s.targetCount,
       s.present,
+      s.informed,
       s.absent,
       `"${s.presentPct}%"`,
     ]);
@@ -484,10 +590,10 @@ export default function ReportsView({ members }: ReportsViewProps) {
           </div>
           <h1 className="text-xl sm:text-2xl font-black text-white uppercase tracking-wide flex items-center gap-2.5">
             <BarChart3 className="w-6 h-6 text-sky-400" />
-            Attendance Intelligence & Analytics
+            {isTeamView ? `${teamScope} Team ` : ''}Attendance Intelligence & Analytics
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Real-time turnout benchmarks, domain distribution & member participation
+            Real-time turnout benchmarks, {isTeamView ? 'role distribution' : 'domain distribution'} & member participation
           </p>
         </div>
 
@@ -587,7 +693,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 )}
               </div>
               <p className="text-[10px] text-slate-500 font-mono mt-2">
-                Tracking all verticals & general calls
+                {isTeamView ? 'Team meetings & general calls' : 'Tracking all verticals & general calls'}
               </p>
             </SpotlightCard>
 
@@ -608,11 +714,17 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 <span className="text-[11px] font-mono text-emerald-400">Active Roster</span>
               </div>
               <div className="mt-3 flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
-                <span>Distributed across</span>
-                <span className="text-sky-300 font-bold">{TEAM_ORDER.length} Domains</span>
+                {isTeamView ? (
+                  <span className="text-sky-300 font-bold">{teamScope} Team</span>
+                ) : (
+                  <>
+                    <span>Distributed across</span>
+                    <span className="text-sky-300 font-bold">{TEAM_ORDER.length} Domains</span>
+                  </>
+                )}
               </div>
               <p className="text-[10px] text-slate-500 font-mono mt-2">
-                ERM, TECH, PR, DESIGN, AMBIANCE, MEDIA
+                {isTeamView ? 'Your team roster only' : 'ERM, TECH, PR, DESIGN, AMBIANCE, MEDIA'}
               </p>
             </SpotlightCard>
 
@@ -655,8 +767,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
           {/* ══════════════════════════════════════════════
               ROW 2: VISUAL CHARTS
-              - Left: Session Turnout Trend (SVG Line & Area Chart)
-              - Right: Attendance Distribution (SVG Donut Chart)
              ══════════════════════════════════════════════ */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Chart 1: Curved Line & Area Chart */}
@@ -698,14 +808,15 @@ export default function ReportsView({ members }: ReportsViewProps) {
                       <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
                         <span>{hoveredSession.stat.date}</span>
                         <span>•</span>
-                        <span className="text-sky-300 font-bold">{hoveredSession.stat.team}</span>
+                        <span className="text-sky-300 font-bold">{sessionTeamLabel(hoveredSession.stat.team)}</span>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-4 pt-1.5 border-t border-white/10">
                         <span className="text-slate-400">Turnout:</span>
                         <span className="font-bold text-emerald-400">{hoveredSession.stat.presentPct}%</span>
                       </div>
-                      <div className="flex items-center justify-between gap-4 text-[10px] text-slate-400">
+                      <div className="flex items-center justify-between gap-3 text-[10px] text-slate-400">
                         <span>Present: {hoveredSession.stat.present}</span>
+                        <span>Informed: {hoveredSession.stat.informed}</span>
                         <span>Absent: {hoveredSession.stat.absent}</span>
                       </div>
                     </div>
@@ -727,7 +838,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                       return { x, y, s };
                     });
 
-                    // Build smooth SVG cubic bezier path
                     let linePath = `M ${points[0].x} ${points[0].y}`;
                     for (let i = 0; i < points.length - 1; i++) {
                       const curr = points[i];
@@ -797,10 +907,8 @@ export default function ReportsView({ members }: ReportsViewProps) {
                           75% Benchmark
                         </text>
 
-                        {/* Gradient Area Fill */}
                         <path d={areaPath} fill="url(#areaGradient)" />
 
-                        {/* Glowing Line Stroke */}
                         <path
                           d={linePath}
                           fill="none"
@@ -809,7 +917,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                           filter="url(#glowLine)"
                         />
 
-                        {/* Data Points */}
                         {points.map((p) => (
                           <g
                             key={p.s.id}
@@ -857,7 +964,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 </p>
               </div>
 
-              {/* Donut Chart Visual */}
               <div className="flex flex-col items-center justify-center my-auto">
                 <div className="relative w-44 h-44 flex items-center justify-center">
                   {(() => {
@@ -865,13 +971,9 @@ export default function ReportsView({ members }: ReportsViewProps) {
                     const circumference = 2 * Math.PI * radius;
                     const total = Math.max(1, overallStats.totalMembers);
 
-                    const pOutstanding = overallStats.outstandingCount / total;
-                    const pConsistent = overallStats.consistentCount / total;
-                    const pDefaulters = overallStats.defaultersCount / total;
-
-                    const lenOutstanding = pOutstanding * circumference;
-                    const lenConsistent = pConsistent * circumference;
-                    const lenDefaulters = pDefaulters * circumference;
+                    const lenOutstanding = (overallStats.outstandingCount / total) * circumference;
+                    const lenConsistent = (overallStats.consistentCount / total) * circumference;
+                    const lenDefaulters = (overallStats.defaultersCount / total) * circumference;
 
                     const offsetOutstanding = 0;
                     const offsetConsistent = -lenOutstanding;
@@ -879,47 +981,21 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
                     return (
                       <svg className="w-full h-full -rotate-90" viewBox="0 0 160 160">
-                        {/* Background track */}
+                        <circle cx="80" cy="80" r={radius} fill="transparent" stroke="rgba(255, 255, 255, 0.05)" strokeWidth="14" />
                         <circle
-                          cx="80"
-                          cy="80"
-                          r={radius}
-                          fill="transparent"
-                          stroke="rgba(255, 255, 255, 0.05)"
-                          strokeWidth="14"
-                        />
-                        {/* Outstanding Segment (Emerald) */}
-                        <circle
-                          cx="80"
-                          cy="80"
-                          r={radius}
-                          fill="transparent"
-                          stroke="#10B981"
-                          strokeWidth="14"
+                          cx="80" cy="80" r={radius} fill="transparent" stroke="#10B981" strokeWidth="14"
                           strokeDasharray={`${lenOutstanding} ${circumference}`}
                           strokeDashoffset={offsetOutstanding}
                           className="transition-all duration-1000"
                         />
-                        {/* Consistent Segment (Sky) */}
                         <circle
-                          cx="80"
-                          cy="80"
-                          r={radius}
-                          fill="transparent"
-                          stroke="#38BDF8"
-                          strokeWidth="14"
+                          cx="80" cy="80" r={radius} fill="transparent" stroke="#38BDF8" strokeWidth="14"
                           strokeDasharray={`${lenConsistent} ${circumference}`}
                           strokeDashoffset={offsetConsistent}
                           className="transition-all duration-1000"
                         />
-                        {/* Defaulter Segment (Rose) */}
                         <circle
-                          cx="80"
-                          cy="80"
-                          r={radius}
-                          fill="transparent"
-                          stroke="#F43F5E"
-                          strokeWidth="14"
+                          cx="80" cy="80" r={radius} fill="transparent" stroke="#F43F5E" strokeWidth="14"
                           strokeDasharray={`${lenDefaulters} ${circumference}`}
                           strokeDashoffset={offsetDefaulters}
                           className="transition-all duration-1000"
@@ -928,27 +1004,23 @@ export default function ReportsView({ members }: ReportsViewProps) {
                     );
                   })()}
 
-                  {/* Donut Center Readout */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-2xl font-black font-mono text-white tracking-tight">
                       <AnimatedCounter value={overallStats.overallPct} suffix="%" decimals={1} />
                     </span>
                     <span className="text-[9px] uppercase font-mono tracking-widest text-slate-400">
-                      Mean Turnout
+                      Overall Turnout
                     </span>
                   </div>
                 </div>
 
-                {/* Legend List */}
                 <div className="w-full mt-4 space-y-2 text-xs font-mono">
                   <div className="flex items-center justify-between p-2 rounded bg-emerald-950/20 border border-emerald-500/20">
                     <div className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10B981]" />
                       <span className="text-slate-300">Outstanding (≥90%)</span>
                     </div>
-                    <span className="font-bold text-emerald-400">
-                      {overallStats.outstandingCount} members
-                    </span>
+                    <span className="font-bold text-emerald-400">{overallStats.outstandingCount} members</span>
                   </div>
 
                   <div className="flex items-center justify-between p-2 rounded bg-sky-950/20 border border-sky-500/20">
@@ -956,9 +1028,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                       <div className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38BDF8]" />
                       <span className="text-slate-300">Consistent (75-89%)</span>
                     </div>
-                    <span className="font-bold text-sky-300">
-                      {overallStats.consistentCount} members
-                    </span>
+                    <span className="font-bold text-sky-300">{overallStats.consistentCount} members</span>
                   </div>
 
                   <div className="flex items-center justify-between p-2 rounded bg-rose-950/20 border border-rose-500/20">
@@ -966,9 +1036,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                       <div className="w-2.5 h-2.5 rounded-full bg-rose-400 shadow-[0_0_8px_#F43F5E]" />
                       <span className="text-slate-300">Defaulters (&lt;75%)</span>
                     </div>
-                    <span className="font-bold text-rose-400">
-                      {overallStats.defaultersCount} members
-                    </span>
+                    <span className="font-bold text-rose-400">{overallStats.defaultersCount} members</span>
                   </div>
                 </div>
               </div>
@@ -976,116 +1044,171 @@ export default function ReportsView({ members }: ReportsViewProps) {
           </div>
 
           {/* ══════════════════════════════════════════════
-              ROW 3: COMPARATIVE BAR CHARTS
-              - Left: Domain/Vertical Comparison
-              - Right: Role Analysis Comparison
+              ROW 3: DOMAIN CARD + ROLE CARD (role card follows the selected domain)
              ══════════════════════════════════════════════ */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Domain Benchmarks Bar Chart */}
-            <div className="rect-card-elevated p-6">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
-                <div>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-cyan-400" />
-                    Domain Turnout Benchmarks
-                  </h3>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Comparative attendance performance across verticals
-                  </p>
+          <div className={`grid grid-cols-1 ${isTeamView ? '' : 'lg:grid-cols-2'} gap-6`}>
+            {/* Domain card (admin only) */}
+            {!isTeamView && (
+              <div className="rect-card-elevated p-6">
+                <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-cyan-400" />
+                      Domain Turnout Benchmarks
+                    </h3>
+                    <p className="text-xs text-slate-400 font-mono mt-0.5">
+                      Select a domain to see its role-wise stats
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">Expected = meetings × members</span>
                 </div>
-                <span className="text-[10px] font-mono text-slate-400">Present vs Absent</span>
-              </div>
 
-              <div className="space-y-4">
-                {verticalBenchmarks.map((b) => {
-                  const isHealthy = b.avgPct >= 75;
-                  return (
-                    <div key={b.team} className="p-3 rounded-md bg-[#050B14]/80 border border-white/5 hover:border-sky-500/30 transition-all">
-                      <div className="flex items-center justify-between mb-1.5 text-xs font-mono">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-sky-950/80 text-sky-300 font-bold border border-sky-500/30 text-[10px]">
-                            {b.team}
-                          </span>
-                          <span className="text-slate-400">{b.memberCount} members</span>
+                <div className="space-y-2.5">
+                  {[allDomains, ...domainBreakdown].map((d) => {
+                    const isAll = d.label === 'ALL';
+                    const selected = activeDomain === d.label;
+                    const hasData = d.expected > 0;
+                    const healthy = hasData && d.pct >= 75;
+                    return (
+                      <button
+                        key={d.label}
+                        type="button"
+                        onClick={() => setSelectedDomain(d.label)}
+                        aria-pressed={selected}
+                        className={`w-full text-left p-3 rounded-md border transition-all cursor-pointer ${
+                          selected
+                            ? 'bg-sky-500/10 border-sky-400/70 shadow-[0_0_18px_rgba(14,165,233,0.18)]'
+                            : 'bg-[#050B14]/80 border-white/5 hover:border-sky-500/30'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5 text-xs font-mono">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`px-2 py-0.5 rounded font-bold border text-[10px] ${
+                              selected
+                                ? 'bg-sky-500 text-white border-sky-300'
+                                : 'bg-sky-950/80 text-sky-300 border-sky-500/30'
+                            }`}>
+                              {isAll ? 'ALL DOMAINS' : d.label}
+                            </span>
+                            <span className="text-slate-400 truncate">
+                              {d.memberCount} members · {d.meetings} {isAll ? 'meetings total' : 'meetings'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            {hasData && (
+                              <span className="text-slate-400 hidden sm:inline">
+                                <strong className="text-emerald-400">{d.present}</strong> / {d.expected}
+                                {d.informed > 0 && <span className="text-amber-400"> · {d.informed} inf</span>}
+                              </span>
+                            )}
+                            <span className={`font-black text-sm ${!hasData ? 'text-slate-500' : healthy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {hasData ? `${d.pct}%` : '—'}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-400">
-                            Present: <strong className="text-emerald-400">{b.present}</strong> · Absent: <strong className="text-rose-400">{b.absent}</strong>
-                          </span>
-                          <span className={`font-black text-sm ${isHealthy ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {b.avgPct}%
-                          </span>
+                        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-white/5">
+                          <div
+                            className={`h-full transition-all duration-700 ${
+                              healthy ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : 'bg-gradient-to-r from-rose-500 to-amber-500'
+                            }`}
+                            style={{ width: `${Math.min(100, d.pct)}%` }}
+                          />
                         </div>
-                      </div>
-
-                      {/* Bar indicator */}
-                      <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-white/5">
-                        <div
-                          className={`h-full transition-all duration-700 ${
-                            isHealthy
-                              ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
-                              : 'bg-gradient-to-r from-rose-500 to-amber-500'
-                          }`}
-                          style={{ width: `${Math.min(100, b.avgPct)}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Role Attendance Analysis Bar Chart */}
-            <div className="rect-card-elevated p-6">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+            {/* Role card: follows the selected domain */}
+            <div className="rect-card-elevated p-6 self-start">
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-white/10 mb-4">
                 <div>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                     <Award className="w-4 h-4 text-amber-400" />
                     Role Attendance Analysis
                   </h3>
                   <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Engagement breakdown across leadership hierarchy
+                    {activeDomain === 'ALL'
+                      ? 'Roles across all domains'
+                      : `Roles in ${activeDomain}`}
                   </p>
                 </div>
-                <span className="text-[10px] font-mono text-slate-400">Hierarchy View</span>
+                <span className="px-2.5 py-1 rounded bg-sky-500 text-white border border-sky-300 text-[11px] font-mono font-bold uppercase tracking-wider shrink-0">
+                  {activeDomain === 'ALL' ? 'All Domains' : activeDomain}
+                </span>
               </div>
 
-              <div className="space-y-4">
-                {roleBenchmarks.map((r) => {
-                  const isHealthy = r.avgPct >= 75;
-                  return (
-                    <div key={r.role} className="p-3 rounded-md bg-[#050B14]/80 border border-white/5 hover:border-sky-500/30 transition-all">
-                      <div className="flex items-center justify-between mb-1.5 text-xs font-mono">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${ROLE_STYLE[r.role] || 'bg-slate-800 text-slate-300'}`}>
-                            {r.role}
-                          </span>
-                          <span className="text-slate-400">{r.memberCount} personnel</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-400">
-                            Present: <strong className="text-emerald-400">{r.present}</strong> · Absent: <strong className="text-rose-400">{r.absent}</strong>
-                          </span>
-                          <span className={`font-black text-sm ${isHealthy ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {r.avgPct}%
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Bar indicator */}
-                      <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-white/5">
-                        <div
-                          className={`h-full transition-all duration-700 ${
-                            isHealthy
-                              ? 'bg-gradient-to-r from-sky-500 to-indigo-500'
-                              : 'bg-gradient-to-r from-rose-500 to-amber-500'
-                          }`}
-                          style={{ width: `${Math.min(100, r.avgPct)}%` }}
-                        />
-                      </div>
+              {activeDetail && (
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center font-mono mb-4">
+                  <div className="p-2 rounded bg-white/[0.03] border border-white/5">
+                    <div className="text-sm font-bold text-white">
+                      {activeDetail.meetings}
                     </div>
-                  );
-                })}
+                    <span className="text-[9px] text-slate-500 uppercase">{activeDomain === 'ALL' ? 'Total Meetings' : 'Meetings'}</span>
+                  </div>
+                  <div className="p-2 rounded bg-white/[0.03] border border-white/5">
+                    <div className="text-sm font-bold text-sky-300">{activeDetail.expected}</div>
+                    <span className="text-[9px] text-slate-500 uppercase">Expected</span>
+                  </div>
+                  <div className="p-2 rounded bg-emerald-950/30 border border-emerald-500/20">
+                    <div className="text-sm font-bold text-emerald-400">{activeDetail.present}</div>
+                    <span className="text-[9px] text-slate-500 uppercase">Present</span>
+                  </div>
+                  <div className="p-2 rounded bg-amber-950/30 border border-amber-500/20">
+                    <div className="text-sm font-bold text-amber-400">{activeDetail.informed}</div>
+                    <span className="text-[9px] text-slate-500 uppercase">Informed</span>
+                  </div>
+                  <div className="p-2 rounded bg-rose-950/30 border border-rose-500/20">
+                    <div className="text-sm font-bold text-rose-400">{activeDetail.absent}</div>
+                    <span className="text-[9px] text-slate-500 uppercase">Absent</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {activeRoles.length === 0 ? (
+                  <p className="py-8 text-center text-xs font-mono text-slate-500">No members in this domain.</p>
+                ) : (
+                  activeRoles.map((r) => {
+                    const rHas = r.expected > 0;
+                    const rHealthy = rHas && r.pct >= 75;
+                    return (
+                      <div key={r.label} className="p-3 rounded-md bg-[#050B14]/80 border border-white/5">
+                        <div className="flex items-center justify-between mb-1.5 text-xs font-mono">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${ROLE_STYLE[r.label] || 'bg-slate-800 text-slate-300'}`}>
+                              {r.label}
+                            </span>
+                            <span className="text-slate-400">
+                              {r.memberCount} personnel{activeDomain !== 'ALL' && ` × ${r.meetings}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {rHas && (
+                              <span className="text-slate-400 hidden sm:inline">
+                                <strong className="text-emerald-400">{r.present}</strong> / {r.expected} expected
+                                {r.informed > 0 && <span className="text-amber-400"> · {r.informed} inf</span>}
+                              </span>
+                            )}
+                            <span className={`font-black text-sm ${!rHas ? 'text-slate-500' : rHealthy ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {rHas ? `${r.pct}%` : '—'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-white/5">
+                          <div
+                            className={`h-full transition-all duration-700 ${
+                              rHealthy ? 'bg-gradient-to-r from-sky-500 to-indigo-500' : 'bg-gradient-to-r from-rose-500 to-amber-500'
+                            }`}
+                            style={{ width: `${Math.min(100, r.pct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -1108,9 +1231,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
               </p>
             </div>
 
-            {/* Quick Actions / Filters */}
             <div className="flex flex-wrap items-center gap-3">
-              {/* Search Bar */}
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                 <input
@@ -1122,7 +1243,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 />
               </div>
 
-              {/* Defaulter Toggle */}
               <button
                 onClick={() => setShowDefaultersOnly(!showDefaultersOnly)}
                 className={`px-3 py-1.5 rounded text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer ${
@@ -1134,7 +1254,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 {showDefaultersOnly ? '● Defaulters (<75%) Active' : 'Show <75% Only'}
               </button>
 
-              {/* Sort Selector */}
               <div className="flex items-center gap-1.5 bg-[#050B14] px-2.5 py-1 rounded border border-white/10 text-xs font-mono">
                 <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                 <select
@@ -1151,27 +1270,28 @@ export default function ReportsView({ members }: ReportsViewProps) {
             </div>
           </div>
 
-          {/* Vertical Tabs Filter */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-white/5">
-            {['ALL', ...TEAM_ORDER].map((vertical) => {
-              const active = selectedVertical === vertical;
-              return (
-                <button
-                  key={vertical}
-                  onClick={() => setSelectedVertical(vertical)}
-                  className={`px-3 py-1 rounded-sm text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
-                    active
-                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50 shadow-[0_0_12px_rgba(14,165,233,0.3)]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
-                  }`}
-                >
-                  {vertical}
-                </button>
-              );
-            })}
-          </div>
+          {/* Vertical Tabs Filter (admin only) */}
+          {!isTeamView && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-white/5">
+              {['ALL', ...TEAM_ORDER].map((vertical) => {
+                const active = selectedVertical === vertical;
+                return (
+                  <button
+                    key={vertical}
+                    onClick={() => setSelectedVertical(vertical)}
+                    className={`px-3 py-1 rounded-sm text-xs font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
+                      active
+                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50 shadow-[0_0_12px_rgba(14,165,233,0.3)]'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
+                    }`}
+                  >
+                    {vertical}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          {/* Member Rows Table / Cards */}
           <div className="space-y-2.5 max-h-[620px] overflow-y-auto custom-scrollbar pr-1">
             {filteredMembers.length === 0 ? (
               <div className="py-16 text-center text-slate-500 font-mono text-xs">
@@ -1196,7 +1316,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                     key={m.memberId}
                     className="rect-card p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(14,165,233,0.12)] transition-all"
                   >
-                    {/* Left: Avatar & Identity */}
                     <div className="flex items-center gap-3 min-w-0">
                       <div
                         className="w-9 h-9 rounded-md flex items-center justify-center text-white text-xs font-black shrink-0"
@@ -1212,24 +1331,21 @@ export default function ReportsView({ members }: ReportsViewProps) {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400 mt-0.5">
-                          <span className="text-sky-300 font-semibold">{m.team}</span>
-                          {m.rollNo && <span>• {m.rollNo}</span>}
-                          {m.department && <span>• {m.department}</span>}
+                          {!isTeamView && <span className="text-sky-300 font-semibold">{m.team}</span>}
+                          {m.rollNo && <span>{isTeamView ? '' : '• '}{m.rollNo}</span>}
+                          {m.department && <span>{isTeamView && !m.rollNo ? '' : '• '}{m.department}</span>}
                         </div>
                       </div>
                     </div>
 
-                    {/* Right: Metrics & Explicit View Action */}
                     <div className="flex items-center justify-between sm:justify-end gap-5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
-                      {/* Counts */}
                       <div className="text-right font-mono text-xs">
                         <div className="text-slate-300">
-                          <span className="text-emerald-400 font-bold">{m.present}</span> Present · <span className="text-rose-400 font-bold">{m.absent}</span> Absent
+                          <span className="text-emerald-400 font-bold">{m.present}</span> Present · <span className="text-amber-400 font-bold">{m.informed}</span> Informed · <span className="text-rose-400 font-bold">{m.absent}</span> Absent
                         </div>
                         <span className="text-[10px] text-slate-500">out of {m.total} sessions</span>
                       </div>
 
-                      {/* Percentage Bar */}
                       <div className="flex flex-col items-end gap-1 w-20">
                         <span className={`font-mono font-black text-sm ${isHealthy ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {m.presentPct}%
@@ -1242,7 +1358,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                         </div>
                       </div>
 
-                      {/* Explicit VIEW action button */}
                       <button
                         onClick={() => handleOpenMemberView(memberData)}
                         title="View Attendance History (Read-Only)"
@@ -1294,16 +1409,16 @@ export default function ReportsView({ members }: ReportsViewProps) {
                   <div className="flex items-center gap-4 min-w-0">
                     <div className="w-12 h-12 rounded-md bg-[#0C1E38] border border-sky-500/30 flex flex-col items-center justify-center shrink-0">
                       <span className="text-[9px] font-bold text-sky-400 uppercase leading-none mb-0.5">
-                        {new Date(session.date).toLocaleDateString('en-US', { month: 'short' })}
+                        {new Date(`${session.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short' })}
                       </span>
                       <span className="text-lg font-black text-white leading-none font-mono">
-                        {new Date(session.date).getDate()}
+                        {new Date(`${session.date}T00:00:00`).getDate()}
                       </span>
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="px-2 py-0.5 bg-[#0C1E38] text-sky-300 border border-sky-500/30 rounded-sm text-[9px] font-bold font-mono uppercase">
-                          {session.team}
+                          {sessionTeamLabel(session.team)}
                         </span>
                         <span className="px-2 py-0.5 rounded-sm text-[9px] font-bold font-mono uppercase bg-indigo-950/60 text-indigo-300 border border-indigo-500/30">
                           {session.sessionSlot || 'FN'}
@@ -1331,7 +1446,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                     ) : (
                       <>
                         <div className="text-right">
-                          <span className="text-emerald-400 font-bold">{session.present}</span> Present · <span className="text-rose-400 font-bold">{session.absent}</span> Absent
+                          <span className="text-emerald-400 font-bold">{session.present}</span> Present · <span className="text-amber-400 font-bold">{session.informed}</span> Informed · <span className="text-rose-400 font-bold">{session.absent}</span> Absent
                           <p className="text-[10px] text-slate-500">{session.targetCount} target members</p>
                         </div>
                         <div className="flex flex-col items-end gap-1 w-20">
@@ -1371,7 +1486,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Export Card 1: Members Roster */}
             <SpotlightCard className="p-5 flex flex-col justify-between" spotlightColor="rgba(56, 189, 248, 0.2)">
               <div>
                 <div className="p-2.5 rounded-md bg-sky-500/10 border border-sky-500/30 text-sky-400 w-fit mb-3">
@@ -1393,7 +1507,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
               </button>
             </SpotlightCard>
 
-            {/* Export Card 2: Attendance Analytics */}
             <SpotlightCard className="p-5 flex flex-col justify-between" spotlightColor="rgba(16, 185, 129, 0.2)">
               <div>
                 <div className="p-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 w-fit mb-3">
@@ -1403,7 +1516,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                   Attendance Metrics Matrix
                 </h3>
                 <p className="text-xs text-slate-400 font-mono mb-4 leading-relaxed">
-                  Comprehensive performance log with total sessions, total presents, total absents, and turnout %.
+                  Comprehensive performance log with total sessions, present, informed and absent counts, and turnout %.
                 </p>
               </div>
               <button
@@ -1415,7 +1528,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
               </button>
             </SpotlightCard>
 
-            {/* Export Card 3: Sessions Log */}
             <SpotlightCard className="p-5 flex flex-col justify-between" spotlightColor="rgba(168, 85, 247, 0.2)">
               <div>
                 <div className="p-2.5 rounded-md bg-purple-500/10 border border-purple-500/30 text-purple-400 w-fit mb-3">
@@ -1425,7 +1537,7 @@ export default function ReportsView({ members }: ReportsViewProps) {
                   Session Pulse History
                 </h3>
                 <p className="text-xs text-slate-400 font-mono mb-4 leading-relaxed">
-                  Chronological log of every scheduled meeting, target vertical, slot (FN/AN), and turnout counts.
+                  Chronological log of every held meeting, {isTeamView ? 'team' : 'target vertical'}, slot (FN/AN), and turnout counts.
                 </p>
               </div>
               <button
@@ -1442,12 +1554,10 @@ export default function ReportsView({ members }: ReportsViewProps) {
 
       {/* ══════════════════════════════════════════════
           MEMBER ATTENDANCE HISTORY DRILLDOWN MODAL
-          (Explicitly labeled View Mode [Read-Only])
          ══════════════════════════════════════════════ */}
       {viewMember && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
           <div className="rect-card-elevated max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header */}
             <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
               <div>
                 <div className="flex items-center gap-2">
@@ -1473,7 +1583,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
               </button>
             </div>
 
-            {/* Modal Content */}
             <div className="p-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
               {historyLoading ? (
                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
@@ -1482,7 +1591,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                 </div>
               ) : memberHistory ? (
                 <div className="space-y-4">
-                  {/* Profile Summary */}
                   <div className="flex items-center gap-3 p-4 rounded-md rect-card bg-[#0B172B]/70">
                     <div
                       className="w-10 h-10 rounded-md flex items-center justify-center text-white text-sm font-bold shrink-0"
@@ -1513,29 +1621,25 @@ export default function ReportsView({ members }: ReportsViewProps) {
                     </div>
                   </div>
 
-                  {/* Summary Metric Counters (Total, Present, Absent) */}
-                  <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono">
                     <div className="p-2.5 rounded-sm rect-card bg-white/[0.02]">
-                      <div className="text-xs font-bold text-slate-200">
-                        {memberHistory.stats.total}
-                      </div>
+                      <div className="text-xs font-bold text-slate-200">{memberHistory.stats.total}</div>
                       <span className="text-[9px] text-slate-500 uppercase">Total</span>
                     </div>
                     <div className="p-2.5 rounded-sm bg-emerald-950/40 border border-emerald-500/30 text-emerald-400">
-                      <div className="text-xs font-bold">
-                        {memberHistory.stats.present}
-                      </div>
+                      <div className="text-xs font-bold">{memberHistory.stats.present}</div>
                       <span className="text-[9px] uppercase">Present</span>
                     </div>
+                    <div className="p-2.5 rounded-sm bg-amber-950/40 border border-amber-500/30 text-amber-400">
+                      <div className="text-xs font-bold">{memberHistory.stats.informed}</div>
+                      <span className="text-[9px] uppercase">Informed</span>
+                    </div>
                     <div className="p-2.5 rounded-sm bg-rose-950/40 border border-rose-500/30 text-rose-400">
-                      <div className="text-xs font-bold">
-                        {memberHistory.stats.absent}
-                      </div>
+                      <div className="text-xs font-bold">{memberHistory.stats.absent}</div>
                       <span className="text-[9px] uppercase">Absent</span>
                     </div>
                   </div>
 
-                  {/* Meeting History Logs */}
                   <div>
                     <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 font-mono">
                       Meeting Logs
@@ -1547,7 +1651,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
                     ) : (
                       <div className="space-y-2">
                         {memberHistory.history.map((h, i) => {
-                          const isPresent = h.status === 'PRESENT';
                           return (
                             <div
                               key={i}
@@ -1561,12 +1664,14 @@ export default function ReportsView({ members }: ReportsViewProps) {
                               </div>
                               <span
                                 className={`px-2 py-0.5 rounded-sm text-[10px] font-bold font-mono uppercase ${
-                                  isPresent
+                                  h.status === 'PRESENT'
                                     ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40'
+                                    : h.status === 'INFORMED'
+                                    ? 'bg-amber-950/60 text-amber-300 border border-amber-500/40'
                                     : 'bg-slate-900 text-slate-400 border border-slate-700/40'
                                 }`}
                               >
-                                {isPresent ? 'Present' : 'Absent'}
+                                {h.status === 'PRESENT' ? 'Present' : h.status === 'INFORMED' ? 'Informed' : 'Absent'}
                               </span>
                             </div>
                           );
@@ -1582,7 +1687,6 @@ export default function ReportsView({ members }: ReportsViewProps) {
               )}
             </div>
 
-            {/* Modal Footer */}
             <div className="px-6 py-3.5 border-t border-white/10 bg-white/[0.02] text-right">
               <button
                 onClick={() => {

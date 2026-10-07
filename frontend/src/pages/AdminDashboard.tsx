@@ -140,6 +140,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [viewingMember, setViewingMember] = useState<Member | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedMemberHistory, setSelectedMemberHistory] = useState<MemberHistoryDetail | null>(null);
+  // Stat card filter for the meeting logs in the history modal
+  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'PRESENT' | 'INFORMED' | 'ABSENT'>('ALL');
   const [sessions, setSessions] = useState<any[]>([]);
 
   const handleLogout = () => {
@@ -185,6 +187,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     setViewingMember(member);
     setHistoryLoading(true);
     setSelectedMemberHistory(null);
+    setHistoryFilter('ALL');
     try {
       const res = await fetch(`/api/members/${member.id}/attendance`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
@@ -192,13 +195,30 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       if (res.ok) {
         const text = await res.text();
         const data = text ? JSON.parse(text) : null;
-        setSelectedMemberHistory(data);
+        if (data) {
+          // Informed is counted from the meeting logs; absent = total - present - informed
+          const informed = (data.history || []).filter((h: any) => h.status === 'INFORMED').length;
+          setSelectedMemberHistory({
+            ...data,
+            stats: {
+              ...data.stats,
+              informed,
+              absent: Math.max(0, data.stats.total - data.stats.present - informed),
+            },
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to load member history:', err);
     } finally {
       setHistoryLoading(false);
     }
+  };
+
+  const closeHistory = () => {
+    setViewingMember(null);
+    setSelectedMemberHistory(null);
+    setHistoryFilter('ALL');
   };
 
   const handleOpenEdit = (member: Member) => {
@@ -224,7 +244,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     setEditSuccess(null);
 
     try {
-      const method = editingMember ? 'PUT' : 'POST';
+      const method = editingMember ? 'PATCH' : 'POST';
       const url = editingMember ? `/api/members/${editingMember.id}` : '/api/members';
       
       const res = await fetch(url, {
@@ -359,6 +379,11 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     }
     return byRoleThenName(a, b);
   });
+
+  // Meeting logs shown in the history modal, based on the clicked stat card
+  const shownHistory = (selectedMemberHistory?.history || []).filter(
+    (h) => historyFilter === 'ALL' || h.status === historyFilter,
+  );
 
   const SortIcon = ({ columnKey }: { columnKey: keyof Member }) => {
     const sortIndex = sortConfigs.findIndex(c => c.key === columnKey);
@@ -1201,7 +1226,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 <p className="text-xs text-[#9490A6]">Detailed session attendance profile · Read-only</p>
               </div>
               <button
-                onClick={() => { setViewingMember(null); setSelectedMemberHistory(null); }}
+                onClick={closeHistory}
                 className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1265,30 +1290,44 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 </div>
               ) : selectedMemberHistory ? (
                 <>
-                  {/* Summary Counters: Total, Present, Absent (Absent = Total - Present) */}
-                  <div className="grid grid-cols-3 gap-2.5 text-center">
-                    <div className="p-2.5 rounded-md bg-white/5 border border-white/10">
-                      <div className="text-sm font-bold text-slate-200">{selectedMemberHistory.stats.total}</div>
-                      <span className="text-[10px] text-slate-400 uppercase font-mono">Total</span>
-                    </div>
-                    <div className="p-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-                      <div className="text-sm font-bold text-emerald-300">{selectedMemberHistory.stats.present}</div>
-                      <span className="text-[10px] text-emerald-400 uppercase font-mono">Present</span>
-                    </div>
-                    <div className="p-2.5 rounded-md bg-rose-500/10 border border-rose-500/20">
-                      <div className="text-sm font-bold text-rose-300">{selectedMemberHistory.stats.absent}</div>
-                      <span className="text-[10px] text-rose-400 uppercase font-mono">Absent</span>
-                    </div>
+                  {/* Summary Counters (click a card to filter the meeting logs).
+                      Absent = Total - Present - Informed */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+                    {(
+                      [
+                        { key: 'ALL', label: 'Total', value: selectedMemberHistory.stats.total, box: 'bg-white/5 border-white/10', val: 'text-slate-200', lab: 'text-slate-400', ring: 'ring-slate-400' },
+                        { key: 'PRESENT', label: 'Present', value: selectedMemberHistory.stats.present, box: 'bg-emerald-500/10 border-emerald-500/20', val: 'text-emerald-300', lab: 'text-emerald-400', ring: 'ring-emerald-400' },
+                        { key: 'INFORMED', label: 'Informed', value: selectedMemberHistory.stats.informed, box: 'bg-amber-500/10 border-amber-500/20', val: 'text-amber-300', lab: 'text-amber-400', ring: 'ring-amber-400' },
+                        { key: 'ABSENT', label: 'Absent', value: selectedMemberHistory.stats.absent, box: 'bg-rose-500/10 border-rose-500/20', val: 'text-rose-300', lab: 'text-rose-400', ring: 'ring-rose-400' },
+                      ] as const
+                    ).map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() => setHistoryFilter(historyFilter === c.key ? 'ALL' : c.key)}
+                        title={c.key === 'ALL' ? 'Show all meetings' : `Show ${c.label.toLowerCase()} meetings`}
+                        className={`p-2.5 rounded-md border cursor-pointer transition-all hover:brightness-125 ${c.box} ${
+                          historyFilter === c.key && c.key !== 'ALL' ? `ring-2 ${c.ring}` : ''
+                        }`}
+                      >
+                        <div className={`text-sm font-bold ${c.val}`}>{c.value}</div>
+                        <span className={`text-[10px] uppercase font-mono ${c.lab}`}>{c.label}</span>
+                      </button>
+                    ))}
                   </div>
 
                   {/* Meeting Logs */}
                   <div>
                     <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Meeting Logs</h4>
-                    {selectedMemberHistory.history.length === 0 ? (
-                      <p className="text-xs text-slate-500 py-6 text-center">No meeting attendance recorded yet.</p>
+                    {shownHistory.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-6 text-center">
+                        {historyFilter === 'ALL'
+                          ? 'No meeting attendance recorded yet.'
+                          : `No ${historyFilter.toLowerCase()} meetings.`}
+                      </p>
                     ) : (
                       <div className="space-y-2">
-                        {selectedMemberHistory.history.map((h, i) => {
+                        {shownHistory.map((h, i) => {
                           return (
                             <div key={i} className="p-3 rounded-md border border-white/[0.06] hover:bg-white/[0.03] flex items-center justify-between text-xs transition-colors">
                               <div>
@@ -1315,7 +1354,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
 
               {/* Edit shortcut with explicit permission */}
               <button
-                onClick={() => { handleOpenEdit(viewingMember); setViewingMember(null); setSelectedMemberHistory(null); }}
+                onClick={() => { handleOpenEdit(viewingMember); closeHistory(); }}
                 className="btn-sky-glow w-full py-2.5 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Edit3 className="w-3.5 h-3.5" />
@@ -1326,7 +1365,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
             {/* Footer */}
             <div className="px-6 py-3.5 bg-[#050B14]/80 border-t border-white/[0.08] text-right">
               <button
-                onClick={() => { setViewingMember(null); setSelectedMemberHistory(null); }}
+                onClick={closeHistory}
                 className="btn-rect-secondary px-4 py-2 text-xs font-semibold cursor-pointer"
               >
                 Close
