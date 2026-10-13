@@ -6,7 +6,7 @@
 
 type Timed = { date: string; startTime?: string | null };
 
-const pad = (n: number) => String(n).padStart(2, '0');
+// const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Current local time as "YYYY-MM-DD HH:mm" (sortable as a string). */
 export function nowKey(d = new Date()): string {

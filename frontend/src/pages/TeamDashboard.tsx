@@ -32,7 +32,8 @@ import {
   ChevronRight,
   Sparkles,
   Upload,
-  Download
+  Download,
+  Lock
 } from 'lucide-react';
 import ReportsView from './ReportsView';
 import { isUpcoming, opensLabel } from './sessionTime';
@@ -568,9 +569,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
   const handleOpenEdit = (member: Member) => {
     setEditingMember(member);
     setEditForm({
+      name: member.name,
+      role: member.role,
       rollNo: member.rollNo || '',
       department: member.department || '',
-      year: member.year || '',
+      year: member.year ? String(member.year) : '',
       phone: member.phone || '',
     });
     setEditError(null);
@@ -624,13 +627,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
           setEditModalOpen(false);
         }, 1200);
       } else {
-        if (res.status === 403) {
-          setEditError(
-            'Backend note: Member modification currently requires Administrator permissions. Field changes cannot be written to database directly by Team role.'
-          );
-        } else {
-          setEditError(resData.error || resData.message || `Update failed (${res.status})`);
-        }
+        setEditError(resData.error || resData.message || `Update failed (${res.status})`);
       }
     } catch (err: any) {
       setEditError(err.message || 'Network error updating member');
@@ -2545,7 +2542,8 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                       <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide mb-1">
                         Team
                       </label>
-                      <div className="rect-input w-full px-3 py-2 text-xs text-sky-300 bg-sky-950/30 border-sky-900/50 flex items-center h-full">
+                      <div className="rect-input w-full px-3 py-2 text-xs text-sky-300 bg-sky-950/30 border-sky-900/50 flex items-center gap-2 select-none cursor-not-allowed">
+                        <Lock className="w-3.5 h-3.5 text-sky-500/50" />
                         {teamName}
                       </div>
                     </div>
@@ -2610,11 +2608,11 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   className="rect-input w-full px-3 py-2 text-xs text-white placeholder-slate-500 bg-[#0C1A30]"
                 >
                   <option value="">Select Year</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                  <option value="5th Year">5th Year</option>
                 </select>
               </div>
 

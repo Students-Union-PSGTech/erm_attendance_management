@@ -5,7 +5,7 @@ import {
   LogOut, Grid3X3, ArrowUpDown, ArrowDown, ArrowUp, RefreshCw,
   Search, Filter, X, Minus, Plus, Edit3, Eye, Menu, ShieldCheck,
   Activity, ArrowRight, Sparkles, UserX, ChevronRight, ChevronLeft,
-  FileText, AlertCircle, Check, Upload, Download
+  FileText, AlertCircle, Check, Upload, Download, Key
 } from 'lucide-react';
 import AttendanceView from './AttendanceView';
 import ReportsView from './ReportsView';
@@ -133,6 +133,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const [importCsvText, setImportCsvText] = useState('');
   const [importSaving, setImportSaving] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importErrorDetails, setImportErrorDetails] = useState<{row: number, message: string}[]>([]);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -143,6 +144,70 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   // Stat card filter for the meeting logs in the history modal
   const [historyFilter, setHistoryFilter] = useState<'ALL' | 'PRESENT' | 'INFORMED' | 'ABSENT'>('ALL');
   const [sessions, setSessions] = useState<any[]>([]);
+
+  const [credentialsModalOpen, setCredentialsModalOpen] = useState(false);
+  const [credentialsList, setCredentialsList] = useState<any[]>([]);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [editingCredentialId, setEditingCredentialId] = useState<string | null>(null);
+  const [credentialForm, setCredentialForm] = useState({ username: '', password: '' });
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+  const [credentialSuccess, setCredentialSuccess] = useState<string | null>(null);
+
+  const fetchCredentials = async () => {
+    setCredentialsLoading(true);
+    try {
+      const res = await fetch('/api/credentials', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCredentialsList(data.users || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch credentials:', err);
+    } finally {
+      setCredentialsLoading(false);
+    }
+  };
+
+  const handleOpenCredentials = () => {
+    setCredentialsModalOpen(true);
+    fetchCredentials();
+  };
+
+  const handleSaveCredential = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCredentialId) return;
+    setCredentialError(null);
+    setCredentialSuccess(null);
+    
+    try {
+      const res = await fetch(`/api/credentials/${editingCredentialId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          ...(credentialForm.username ? { username: credentialForm.username } : {}),
+          ...(credentialForm.password ? { password: credentialForm.password } : {})
+        })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update credentials');
+      
+      setCredentialSuccess('Credentials updated successfully');
+      setCredentialsList(prev => prev.map(c => c.id === editingCredentialId ? { ...c, username: data.user.username } : c));
+      setTimeout(() => {
+        setEditingCredentialId(null);
+        setCredentialForm({ username: '', password: '' });
+        setCredentialSuccess(null);
+      }, 1500);
+    } catch (err: any) {
+      setCredentialError(err.message || 'Error updating credentials');
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -229,7 +294,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       role: member.role,
       rollNo: member.rollNo || '',
       department: member.department || '',
-      year: member.year || '',
+      year: member.year ? String(member.year) : '',
       phone: member.phone || '',
     });
     setEditError(null);
@@ -491,6 +556,13 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 }`}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleOpenCredentials}
+                title="Change Credentials"
+                className="p-1.5 rounded text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+              >
+                <Key className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={handleLogout}
@@ -1423,8 +1495,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       value={editForm.team || ''}
                       onChange={(e) => setEditForm(prev => ({ ...prev, team: e.target.value }))}
                       className="rect-input w-full px-2 py-1.5 text-xs bg-[#0B172B] text-slate-200 mt-1 cursor-pointer"
+                      required
                     >
-                      {['MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN', 'ALL'].map(t => <option key={t} value={t} className="bg-[#0B172B] text-slate-200">{t}</option>)}
+                      <option value="" className="bg-[#0B172B] text-slate-400">Select Team</option>
+                      {['MEDIA', 'AMBIANCE', 'PR', 'TECH', 'ERM', 'DESIGN'].map(t => <option key={t} value={t} className="bg-[#0B172B] text-slate-200">{t}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1433,7 +1507,9 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                       value={editForm.role || ''}
                       onChange={(e) => setEditForm(prev => ({ ...prev, role: e.target.value }))}
                       className="rect-input w-full px-2 py-1.5 text-xs bg-[#0B172B] text-slate-200 mt-1 cursor-pointer"
+                      required
                     >
+                      <option value="" className="bg-[#0B172B] text-slate-400">Select Role</option>
                       {['LEAD', 'CO-LEAD', 'COORDINATOR', 'CORE'].map(r => <option key={r} value={r} className="bg-[#0B172B] text-slate-200">{r}</option>)}
                     </select>
                   </div>
@@ -1496,11 +1572,11 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   className="rect-input w-full px-3.5 py-2 text-xs bg-[#0C1A30]"
                 >
                   <option value="">Select Year</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                  <option value="5th Year">5th Year</option>
                 </select>
               </div>
 
@@ -1568,6 +1644,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 if (!importCsvText.trim()) return;
                 setImportSaving(true);
                 setImportError(null);
+                setImportErrorDetails([]);
                 setImportSuccess(null);
                 try {
                   const res = await fetch('/api/members/import', {
@@ -1581,7 +1658,8 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                   const data = await res.json();
                   if (!res.ok) throw new Error(data.error || 'Import failed');
                   if (data.invalid > 0) {
-                    setImportError(`Imported ${data.valid}, but failed ${data.invalid}. Check your data.`);
+                    setImportError(`Successfully imported ${data.valid} members. However, ${data.invalid} rows failed validation and were skipped.`);
+                    setImportErrorDetails(data.errors || []);
                   } else {
                     setImportSuccess(`Successfully imported ${data.valid} members! Reloading...`);
                     setTimeout(() => window.location.reload(), 1500);
@@ -1644,9 +1722,22 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
               </div>
 
               {importError && (
-                <div className="p-3 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{importError}</span>
+                <div className="p-3 rounded-md bg-rose-500/10 border border-rose-500/20 flex flex-col gap-2">
+                  <div className="text-rose-400 text-xs flex items-start gap-2 font-bold">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{importError}</span>
+                  </div>
+                  {importErrorDetails.length > 0 && (
+                    <div className="mt-2 max-h-40 overflow-y-auto bg-black/40 rounded p-2 text-[11px] font-mono text-rose-300">
+                      <ul className="list-disc pl-4 space-y-1">
+                        {importErrorDetails.map((err, i) => (
+                          <li key={i}>
+                            <strong>Row {err.row}:</strong> {err.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
               {importSuccess && (
@@ -1674,6 +1765,128 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Credentials Management Modal ── */}
+      {credentialsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0A1628] border border-white/10 rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-[#0C1A30]">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Key className="w-5 h-5 text-amber-400" />
+                  Manage Credentials
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">Change username and password for any account.</p>
+              </div>
+              <button
+                onClick={() => { setCredentialsModalOpen(false); setEditingCredentialId(null); }}
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {credentialsLoading ? (
+                <div className="flex justify-center items-center py-12">
+                  <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {credentialsList.map((cred) => (
+                    <div key={cred.id} className="border border-white/10 rounded-lg p-4 bg-white/[0.02]">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <p className="text-sm font-bold text-white">{cred.username}</p>
+                          <div className="flex gap-2 mt-1">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-900/50 text-sky-300 border border-sky-500/30">
+                              {cred.role.toUpperCase()}
+                            </span>
+                            {cred.team && (
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300 border border-emerald-500/30">
+                                {cred.team}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {editingCredentialId !== cred.id ? (
+                          <button
+                            onClick={() => {
+                              setEditingCredentialId(cred.id);
+                              setCredentialForm({ username: cred.username, password: '' });
+                              setCredentialError(null);
+                              setCredentialSuccess(null);
+                            }}
+                            className="p-2 text-slate-400 hover:text-amber-400 hover:bg-amber-400/10 rounded transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setEditingCredentialId(null)}
+                            className="p-2 text-slate-400 hover:text-white rounded hover:bg-white/10 transition-colors cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {editingCredentialId === cred.id && (
+                        <form onSubmit={handleSaveCredential} className="mt-4 pt-4 border-t border-white/10 space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium text-slate-400 mb-1.5">New Username</label>
+                              <input
+                                type="text"
+                                value={credentialForm.username}
+                                onChange={(e) => setCredentialForm(prev => ({ ...prev, username: e.target.value }))}
+                                className="w-full bg-[#050B14] border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                                placeholder="Leave empty to keep current"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-400 mb-1.5">New Password</label>
+                              <input
+                                type="password"
+                                value={credentialForm.password}
+                                onChange={(e) => setCredentialForm(prev => ({ ...prev, password: e.target.value }))}
+                                className="w-full bg-[#050B14] border border-white/10 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/50"
+                                placeholder="Leave empty to keep current"
+                              />
+                            </div>
+                          </div>
+                          
+                          {credentialError && (
+                            <div className="p-3 rounded-md bg-rose-500/10 border border-rose-500/20 flex items-start gap-2 text-rose-400">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <span className="text-xs">{credentialError}</span>
+                            </div>
+                          )}
+                          {credentialSuccess && (
+                            <div className="p-3 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2 text-emerald-400">
+                              <Check className="w-4 h-4 shrink-0 mt-0.5" />
+                              <span className="text-xs">{credentialSuccess}</span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end pt-2">
+                            <button
+                              type="submit"
+                              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-amber-950 text-xs font-bold rounded-md transition-colors cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                            >
+                              Save Changes
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
