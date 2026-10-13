@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { Member } from '../models/Member';
 import { resolveTeamScope, currentUser } from '../middleware/auth';
 import { importMembers, removeMembersFromSessions } from '../services/member.service';
@@ -15,7 +16,8 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 async function findVisibleMember(req: Request) {
   const id = idParamSchema.parse(req.params.id);
   const team = resolveTeamScope(req);
-  const member = await Member.findOne({ _id: id, ...(team && { team }) });
+  const _id = Types.ObjectId.isValid(id) ? { $in: [id, new Types.ObjectId(id)] } : id;
+  const member = await Member.findOne({ _id, ...(team && { team }) });
   if (!member) throw notFound('Member not found');
   return member;
 }
@@ -60,6 +62,10 @@ export async function getMemberAttendance(req: Request, res: Response) {
 // POST /api/members   (admin, FR-2.4)
 export async function createMember(req: Request, res: Response) {
   const { id, ...data } = req.body as MemberCreateInput;
+  const user = currentUser(req);
+  if (user.role === 'team' && user.team) {
+    data.team = user.team as any;
+  }
   const _id = id ?? newId('custom');
   if (await Member.exists({ _id })) throw conflict('Member id already exists');
   const member = await Member.create({ _id, ...data });
@@ -71,7 +77,12 @@ export async function updateMember(req: Request, res: Response) {
   await findVisibleMember(req); // 404 if missing or outside the caller's team
   const id = idParamSchema.parse(req.params.id);
   const update = req.body as MemberUpdateInput;
-  const member = await Member.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true });
+  const user = currentUser(req);
+  if (user.role === 'team' && user.team && update.team) {
+    update.team = user.team as any;
+  }
+  const _id = Types.ObjectId.isValid(id) ? { $in: [id, new Types.ObjectId(id)] } : id;
+  const member = await Member.findOneAndUpdate({ _id }, { $set: update }, { new: true, runValidators: true });
   if (!member) throw notFound('Member not found');
   res.json({ member: member.toJSON() });
 }
@@ -80,7 +91,8 @@ export async function updateMember(req: Request, res: Response) {
 export async function deleteMember(req: Request, res: Response) {
   await findVisibleMember(req);
   const id = idParamSchema.parse(req.params.id);
-  const deleted = await Member.findByIdAndDelete(id);
+  const _id = Types.ObjectId.isValid(id) ? { $in: [id, new Types.ObjectId(id)] } : id;
+  const deleted = await Member.findOneAndDelete({ _id });
   if (!deleted) throw notFound('Member not found');
   await removeMembersFromSessions([id]);
   res.status(204).end();

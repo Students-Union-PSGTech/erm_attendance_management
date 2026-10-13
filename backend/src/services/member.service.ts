@@ -72,7 +72,7 @@ export async function importMembers(rows: MemberCreateInput[], opts: ImportOptio
 export async function removeLegacyMembers(): Promise<number> {
   const legacy = await Member.find({ _id: { $regex: `^${LEGACY_MEMBER_PREFIX}` } }, { _id: 1 }).lean();
   if (legacy.length === 0) return 0;
-  const ids = legacy.map((m) => m._id as string);
+  const ids = legacy.map((m) => String(m._id));
   await Member.deleteMany({ _id: { $in: ids } });
   await removeMembersFromSessions(ids);
   console.log(`[maintenance] removed ${ids.length} legacy members`);

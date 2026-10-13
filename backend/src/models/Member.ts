@@ -13,7 +13,7 @@ const setter =
 // FR-2.1: id, name, role, team, optional rollNo/department/year/phone, updatedAt
 const memberSchema = new Schema(
   {
-    _id: { type: String, required: true }, // custom-{timestamp}-{random} (FR-2.4)
+    _id: { type: Schema.Types.Mixed, required: true }, // custom-{timestamp}-{random} (FR-2.4)
     name: { type: String, required: true, trim: true },
     role: { type: String, enum: ROLES, required: true, set: setter(normalizeRole) },
     team: { type: String, enum: TEAMS, required: true, index: true, set: setter(normalizeTeam) },

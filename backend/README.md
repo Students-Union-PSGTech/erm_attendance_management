@@ -26,6 +26,24 @@ npm run build
 npm start
 ```
 
+### Running with Docker
+
+Build and run using Docker directly:
+
+```bash
+# From backend directory
+docker build -t erm-backend .
+docker run -p 4000:4000 --env-file .env erm-backend
+```
+
+Or using Docker Compose:
+
+```bash
+# From backend directory
+docker compose up -d --build
+```
+
+
 Load the member roster from CSV (once, or whenever the roster changes):
 
 ```bash

@@ -90,7 +90,7 @@ export async function memberAttendanceStats(team?: Team, from?: string, to?: str
   const plain = sessions.filter((s) => hasStarted(s, now)).map((s) => ({ team: s.team as string, records: recordsToObject(s.records as RecordsMap) }));
 
   return members.sort(byRoleThenName).map((m) => {
-    const id = m._id as string;
+    const id = String(m._id);
     const t = { PRESENT: 0, ABSENT: 0, INFORMED: 0 } as Record<AttendanceStatus, number>;
     let total = 0;
     for (const s of plain) {
@@ -124,7 +124,7 @@ export async function memberAttendanceStats(team?: Team, from?: string, to?: str
  * (unmarked = ABSENT, marked: false). Same numbers as memberAttendanceStats.
  */
 export async function memberHistory(member: { _id: unknown; team: string }) {
-  const id = member._id as string;
+  const id = String(member._id);
   const sessions = await AttendanceSession.find(
     {},
     { date: 1, startTime: 1, endTime: 1, sessionSlot: 1, title: 1, team: 1, records: 1 },
@@ -180,7 +180,7 @@ export async function dailyAttendance(team?: Team, from?: string, to?: string) {
     const records = recordsToObject(s.records as RecordsMap);
     for (const m of members) {
       if (!sessionTargets(s.team as string, m.team)) continue;
-      const status = records[m._id as string]?.status ?? 'ABSENT';
+      const status = records[String(m._id)]?.status ?? 'ABSENT';
       if (status === 'PRESENT') day.present++;
       else if (status === 'INFORMED') day.informed++;
       else day.absent++;

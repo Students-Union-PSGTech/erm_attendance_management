@@ -1,5 +1,5 @@
 import { parse } from 'csv-parse/sync';
-import { ROLES, TEAMS, YEARS } from '../config/constants';
+import { ROLES, TEAMS, YEARS, DEPARTMENTS } from '../config/constants';
 import { memberCreateSchema, type MemberCreateInput } from '../validators/member.validators';
 
 type Field = 'name' | 'rollNo' | 'department' | 'year' | 'phone' | 'role' | 'team';
@@ -89,4 +89,4 @@ export function membersToCsv(
 }
 
 // Re-exported for convenience in error messages
-export const VALID = { ROLES, TEAMS, YEARS };
+export const VALID = { ROLES, TEAMS, YEARS, DEPARTMENTS };

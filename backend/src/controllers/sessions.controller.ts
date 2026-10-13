@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { AttendanceSession } from '../models/Session';
 import { Member } from '../models/Member';
 import { currentUser, resolveTeamScope } from '../middleware/auth';
@@ -27,12 +28,13 @@ type Records = SessionCreateInput['records'];
 async function prepareRecords(records: Records, team?: Team): Promise<Records> {
   const ids = Object.keys(records);
   if (ids.length === 0) return records;
-  const found = await Member.find({ _id: { $in: ids } }, { _id: 1, team: 1 }).lean();
-  const known = new Set(found.map((m) => m._id as string));
+  const queryIds = ids.flatMap(id => Types.ObjectId.isValid(id) ? [id, new Types.ObjectId(id)] : [id]);
+  const found = await Member.find({ _id: { $in: queryIds } }, { _id: 1, team: 1 }).lean();
+  const known = new Set(found.map((m) => String(m._id)));
   const unknown = ids.filter((id) => !known.has(id));
   if (unknown.length) throw badRequest('Unknown member ids in records', { unknown });
   if (team) {
-    const otherTeam = found.filter((m) => m.team !== team).map((m) => m._id as string);
+    const otherTeam = found.filter((m) => m.team !== team).map((m) => String(m._id));
     if (otherTeam.length) throw forbidden(`You can only mark members of ${team}`);
   }
 
@@ -45,7 +47,7 @@ async function prepareRecords(records: Records, team?: Team): Promise<Records> {
 /** Team users only see their own members' entries inside a session. */
 async function scopeSession<T extends { records?: unknown }>(session: T, team?: Team): Promise<T> {
   if (!team) return session;
-  const ids = new Set((await Member.find({ team }, { _id: 1 }).lean()).map((m) => m._id as string));
+  const ids = new Set((await Member.find({ team }, { _id: 1 }).lean()).map((m) => String(m._id)));
   const records = Object.fromEntries(
     Object.entries(recordsToObject(session.records as never)).filter(([id]) => ids.has(id)),
   );
@@ -78,7 +80,8 @@ async function assertCanMark(user: AuthUser, session: { team: string }, memberId
   if (!sessionIncludesTeam(session.team, user.team!)) {
     throw forbidden("You can only mark attendance in your own team's or ALL sessions");
   }
-  const member = await Member.findById(memberId, { team: 1 }).lean();
+  const _memberId = Types.ObjectId.isValid(memberId) ? { $in: [memberId, new Types.ObjectId(memberId)] } : memberId;
+  const member = await Member.findOne({ _id: _memberId }, { team: 1 }).lean();
   if (!member) throw badRequest('Unknown member ids in records', { unknown: [memberId] });
   if (member.team !== user.team) throw forbidden(`You can only mark members of ${user.team}`);
 }

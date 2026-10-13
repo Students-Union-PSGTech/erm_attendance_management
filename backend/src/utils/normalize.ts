@@ -78,3 +78,17 @@ export function optional<R>(fn: (v: string) => R) {
     return out === '' ? undefined : out;
   };
 }
+import { DEPARTMENTS } from '../config/constants';
+
+export function normalizeDepartment(v: string): string | undefined {
+  const s = collapse(v).toLowerCase();
+  if (!s) return undefined;
+  
+  // Try exact match case-insensitive
+  const exact = DEPARTMENTS.find(d => d.toLowerCase() === s);
+  if (exact) return exact;
+  
+  // Try common abbreviations (optional but helpful, let's keep it simple for now)
+  // If we don't match, return original so Zod enum validation will fail it
+  return v.trim();
+}

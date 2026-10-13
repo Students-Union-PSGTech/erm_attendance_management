@@ -1,7 +1,7 @@
 
 import { z } from 'zod';
-import { ID_PATTERN, ROLES, TEAMS, YEARS } from '../config/constants';
-import { normalizeRole, normalizeRollNo, normalizeTeam, normalizeYear, optional } from '../utils/normalize';
+import { ID_PATTERN, ROLES, TEAMS, YEARS, DEPARTMENTS } from '../config/constants';
+import { normalizeRole, normalizeRollNo, normalizeTeam, normalizeYear, normalizeDepartment, optional } from '../utils/normalize';
 
 // Free text stored as entered (trimmed); "" -> undefined
 const optionalText = z
@@ -20,8 +20,8 @@ export const memberCreateSchema = z.object({
   team: z.preprocess(optional(normalizeTeam), z.enum(TEAMS)),
   rollNo: z.preprocess(optional(normalizeRollNo), z.string().max(40).optional()),
   year: z.preprocess(optional(normalizeYear), z.enum(YEARS).optional()),
+  department: z.preprocess(optional(normalizeDepartment), z.enum(DEPARTMENTS).optional()),
   // Stored as entered
-  department: optionalText,
   phone: optionalText,
   photo: optionalText,
 });

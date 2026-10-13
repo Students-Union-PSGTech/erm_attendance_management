@@ -15,6 +15,6 @@ membersRouter.get('/', members.listMembers);
 membersRouter.get('/:id', members.getMember);
 membersRouter.get('/:id/attendance', members.getMemberAttendance);
 
-membersRouter.post('/', requireAdmin, validateBody(memberCreateSchema), members.createMember);
-membersRouter.patch('/:id', requireAdmin, validateBody(memberUpdateSchema), members.updateMember);
-membersRouter.delete('/:id', requireAdmin, members.deleteMember);
+membersRouter.post('/', validateBody(memberCreateSchema), members.createMember);
+membersRouter.patch('/:id', validateBody(memberUpdateSchema), members.updateMember);
+membersRouter.delete('/:id', members.deleteMember);
