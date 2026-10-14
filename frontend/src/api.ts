@@ -1,6 +1,14 @@
-// Base URL configuration for backend API
-const envBackendUrl = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim();
-const normalizedBackendUrl = envBackendUrl ? envBackendUrl.replace(/\/+$/, '') : '';
+// Base URL configuration for backend API (supports BACKEND_URL, API_URL, or VITE_ prefixed variables)
+const envBackendUrl = (
+  (typeof import.meta !== 'undefined' && import.meta.env && (
+    import.meta.env.BACKEND_URL ||
+    import.meta.env.API_URL ||
+    import.meta.env.VITE_BACKEND_URL ||
+    import.meta.env.VITE_API_URL
+  )) || ''
+) as string;
+
+const normalizedBackendUrl = envBackendUrl ? envBackendUrl.trim().replace(/\/+$/, '') : '';
 
 export const API_BASE_URL = normalizedBackendUrl ? `${normalizedBackendUrl}/api` : '/api';
 
