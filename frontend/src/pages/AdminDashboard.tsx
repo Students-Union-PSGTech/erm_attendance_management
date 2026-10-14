@@ -196,7 +196,10 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       });
       
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to update credentials');
+      if (!res.ok) {
+        const details = Array.isArray(data.details) ? data.details.map((d: any) => d.message).join(', ') : undefined;
+        throw new Error(details || data.error || 'Failed to update credentials');
+      }
       
       setCredentialSuccess('Credentials updated successfully');
       setCredentialsList(prev => prev.map(c => c.id === editingCredentialId ? { ...c, username: data.user.username } : c));
