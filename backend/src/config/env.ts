@@ -19,7 +19,7 @@ export const env = {
   mongoDbName: process.env.MONGODB_DB ?? 'erm_attendance',
   jwtSecret: required('JWT_SECRET'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '8h',
-  corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:5173,http://localhost:3000,https://erm-attendance-management-six.vercel.app')
+  corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:5173,http://localhost:3000,https://erm-attendance-management-six.vercel.app,https://erm-attendance-management-iglt.vercel.app')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean),

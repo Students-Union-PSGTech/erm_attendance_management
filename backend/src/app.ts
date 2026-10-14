@@ -11,7 +11,7 @@ export function createApp() {
 
   const allowedOrigins = new Set([
     ...env.corsOrigins,
-    'https://erm-attendance-management-six.vercel.app',
+    'https://erm-attendance-management-iglt.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000',
   ]);
