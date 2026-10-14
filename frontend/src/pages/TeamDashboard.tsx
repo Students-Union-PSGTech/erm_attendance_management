@@ -39,6 +39,7 @@ import ReportsView from './ReportsView';
 import { isUpcoming, opensLabel } from './sessionTime';
 import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
 import TopographyBackground from '../components/TopographyBackground';
+import { apiFetch } from '../api';
 
 interface TeamDashboardProps {
   user: User;
@@ -353,9 +354,9 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
 
     try {
       const [membersRes, sessionsRes, statsRes] = await Promise.all([
-        fetch('/api/members', { headers }),
-        fetch('/api/sessions', { headers }),
-        fetch('/api/stats/attendance', { headers }),
+        apiFetch('/api/members', { headers }),
+        apiFetch('/api/sessions', { headers }),
+        apiFetch('/api/stats/attendance', { headers }),
       ]);
 
       // Parse members
@@ -547,7 +548,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     setHistoryModalOpen(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`/api/members/${member.id}/attendance`, {
+      const res = await apiFetch(`/api/members/${member.id}/attendance`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -602,7 +603,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
       const method = editingMember ? 'PATCH' : 'POST';
       const url = editingMember ? `/api/members/${editingMember.id}` : '/api/members';
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -700,7 +701,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     }
 
     try {
-      const res = await fetch(editingMeeting ? `/api/sessions/${editingMeeting.id}` : '/api/sessions', {
+      const res = await apiFetch(editingMeeting ? `/api/sessions/${editingMeeting.id}` : '/api/sessions', {
         method: editingMeeting ? 'PATCH' : 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(body),
@@ -728,7 +729,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     if (!deletingMeeting) return;
     setDeleteBusy(true);
     try {
-      const res = await fetch(`/api/sessions/${deletingMeeting.id}`, {
+      const res = await apiFetch(`/api/sessions/${deletingMeeting.id}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
@@ -782,7 +783,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     );
     setMarkingIds((prev) => new Set(prev).add(memberId));
     try {
-      const res = await fetch(`/api/sessions/${session.id}/records/${memberId}`, {
+      const res = await apiFetch(`/api/sessions/${session.id}/records/${memberId}`, {
         method: status ? 'PUT' : 'DELETE',
         headers: getAuthHeaders(),
         ...(status && { body: JSON.stringify({ status }) }),
@@ -814,7 +815,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
     setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, notes } : s));
 
     try {
-      const res = await fetch(`/api/sessions/${activeSession.id}`, {
+      const res = await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({ notes })
@@ -874,7 +875,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
         await Promise.all(
           targets.slice(i, i + 6).map(async (m) => {
             try {
-              const res = await fetch(`/api/sessions/${sessionId}/records/${m.id}`, {
+              const res = await apiFetch(`/api/sessions/${sessionId}/records/${m.id}`, {
                 method: newStatus ? 'PUT' : 'DELETE',
                 headers: getAuthHeaders(),
                 ...(newStatus && { body: JSON.stringify({ status: newStatus }) }),
@@ -2875,7 +2876,7 @@ export default function TeamDashboard({ user, onLogout }: TeamDashboardProps) {
                   }
                   const finalCsvText = lines.join('\n');
 
-                  const res = await fetch('/api/members/import', {
+                  const res = await apiFetch('/api/members/import', {
                     method: 'POST',
                     headers: { ...getAuthHeaders(), 'Content-Type': 'text/csv' },
                     body: finalCsvText,

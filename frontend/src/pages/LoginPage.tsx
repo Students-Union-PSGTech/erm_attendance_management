@@ -3,6 +3,7 @@ import type { User } from '../types';
 import { ArrowRight, Lock, User as UserIcon, Eye, EyeOff, Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import TopographyBackground from '../components/TopographyBackground';
+import api from '../api';
 
 interface LoginPageProps {
   onLogin: (user: User) => void;
@@ -21,10 +22,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+      const res = await api.post('/auth/login', {
+        username: username.trim(),
+        password,
       });
 
       let data: any = null;

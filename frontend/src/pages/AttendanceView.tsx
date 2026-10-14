@@ -3,6 +3,7 @@ import { Calendar, Plus, Clock, Users, ChevronLeft, Check, X, Search, UserX, Tra
 import type { Member } from './AdminDashboard';
 import { isUpcoming, opensLabel } from './sessionTime';
 import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
+import { apiFetch } from '../api';
 
 type AttendanceSession = {
   id: string;
@@ -96,7 +97,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   const fetchSessions = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/sessions', {
+      const res = await apiFetch('/api/sessions', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -138,7 +139,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
 
     try {
       if (!willUnmark) {
-        await fetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
+        await apiFetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -147,7 +148,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
           body: JSON.stringify({ status: targetStatus })
         });
       } else {
-        await fetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
+        await apiFetch(`/api/sessions/${activeSession.id}/records/${memberId}`, {
           method: 'DELETE',
           headers: {
             Authorization: `Bearer ${localStorage.getItem('token')}`
@@ -210,7 +211,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` };
     const known = new Set(members.map(m => m.id));
     try {
-      const latestRes = await fetch(`/api/sessions/${activeSession.id}`, { headers });
+      const latestRes = await apiFetch(`/api/sessions/${activeSession.id}`, { headers });
       const latest = latestRes.ok ? (await latestRes.json()).session : null;
       const base: AttendanceSession['records'] = latest?.records || activeSession.records || {};
       const now = new Date().toISOString();
@@ -229,7 +230,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
         list.forEach(m => { delete records[m.id]; });
       }
 
-      const res = await fetch(`/api/sessions/${activeSession.id}`, {
+      const res = await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({ records }),
@@ -255,7 +256,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     setSessions(prev => prev.map(s => s.id === activeSession.id ? updatedSession : s));
 
     try {
-      await fetch(`/api/sessions/${activeSession.id}`, {
+      await apiFetch(`/api/sessions/${activeSession.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -272,7 +273,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
     e.preventDefault();
     setCreateError(null);
     try {
-      const res = await fetch('/api/sessions', {
+      const res = await apiFetch('/api/sessions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -312,7 +313,7 @@ export default function AttendanceView({ members }: AttendanceViewProps) {
   setDeleteBusy(true);
   setDeleteError(null);
   try {
-    const res = await fetch(`/api/sessions/${deletingSession.id}`, {
+    const res = await apiFetch(`/api/sessions/${deletingSession.id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
     });

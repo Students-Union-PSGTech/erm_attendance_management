@@ -3,6 +3,7 @@ import type { User } from './types';
 import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import TeamDashboard from './pages/TeamDashboard';
+import { apiFetch } from './api';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -15,7 +16,7 @@ export default function App() {
       return;
     }
 
-    fetch('/api/auth/me', {
+    apiFetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(async res => {

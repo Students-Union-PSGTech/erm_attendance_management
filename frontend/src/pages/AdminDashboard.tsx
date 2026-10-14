@@ -13,6 +13,7 @@ import { isUpcoming } from './sessionTime';
 import RepeatAbsentees, { repeatAbsenteeCards } from './RepeatAbsentees';
 import type { MemberHistoryDetail } from './TeamDashboard';
 import TopographyBackground from '../components/TopographyBackground';
+import { apiFetch } from '../api';
 
 interface AdminDashboardProps {
   user: User;
@@ -156,7 +157,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
   const fetchCredentials = async () => {
     setCredentialsLoading(true);
     try {
-      const res = await fetch('/api/credentials', {
+      const res = await apiFetch('/api/credentials', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       if (res.ok) {
@@ -182,7 +183,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     setCredentialSuccess(null);
     
     try {
-      const res = await fetch(`/api/credentials/${editingCredentialId}`, {
+      const res = await apiFetch(`/api/credentials/${editingCredentialId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -218,7 +219,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     try {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
-      const sessRes = await fetch('/api/sessions', { headers });
+      const sessRes = await apiFetch('/api/sessions', { headers });
       if (sessRes.ok) {
         const sData = await sessRes.json();
         setSessions(sData.sessions || []);
@@ -235,7 +236,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     setFilterTeam('ALL');
     setFilterRole('ALL');
     try {
-      const res = await fetch('/api/members', {
+      const res = await apiFetch('/api/members', {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -254,7 +255,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
     setSelectedMemberHistory(null);
     setHistoryFilter('ALL');
     try {
-      const res = await fetch(`/api/members/${member.id}/attendance`, {
+      const res = await apiFetch(`/api/members/${member.id}/attendance`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       });
       if (res.ok) {
@@ -312,7 +313,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
       const method = editingMember ? 'PATCH' : 'POST';
       const url = editingMember ? `/api/members/${editingMember.id}` : '/api/members';
       
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -1647,7 +1648,7 @@ export default function AdminDashboard({ user, onLogout }: AdminDashboardProps) 
                 setImportErrorDetails([]);
                 setImportSuccess(null);
                 try {
-                  const res = await fetch('/api/members/import', {
+                  const res = await apiFetch('/api/members/import', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'text/csv',

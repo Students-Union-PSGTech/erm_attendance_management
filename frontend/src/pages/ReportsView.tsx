@@ -7,6 +7,7 @@ import { animate } from 'animejs';
 
 import type { Member } from './AdminDashboard';
 import { isUpcoming, opensLabel } from './sessionTime';
+import { apiFetch } from '../api';
 
 interface ReportsViewProps {
   members: Member[];
@@ -242,8 +243,8 @@ export default function ReportsView({ members, team }: ReportsViewProps) {
       try {
         const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
         const [attRes, sessionsRes] = await Promise.all([
-          fetch('/api/stats/attendance', { headers }),
-          fetch('/api/sessions', { headers }),
+          apiFetch('/api/stats/attendance', { headers }),
+          apiFetch('/api/sessions', { headers }),
         ]);
         if (cancelled) return;
 
@@ -336,7 +337,7 @@ export default function ReportsView({ members, team }: ReportsViewProps) {
     setMemberHistory(null);
     try {
       const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
-      const res = await fetch(`/api/members/${member.id}/attendance`, { headers });
+      const res = await apiFetch(`/api/members/${member.id}/attendance`, { headers });
       if (res.ok) {
         const data = await res.json();
         const { total, present } = data.stats;
